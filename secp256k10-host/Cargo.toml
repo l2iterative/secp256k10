@@ -1,0 +1,12 @@
+[package]
+name = "secp256k10-host"
+version = "0.1.0"
+authors = ["Weikeng Chen <weikeng.chen@l2iterative.com>"]
+edition = "2021"
+
+[dependencies]
+ark-secp256k1 = "0.4.0"
+ark-ec = "0.4.2"
+ark-ff = "0.4.2"
+num-bigint = "0.4.4"
+secp256k10-guest = { path = "../secp256k10-guest" }

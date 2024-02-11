@@ -1,0 +1,4 @@
+[package]
+name = "secp256k10-guest"
+version = "0.1.0"
+authors = ["Weikeng Chen <weikeng.chen@l2iterative.com>"]
