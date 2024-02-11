@@ -6,3 +6,16 @@ members = [
     "secp256k10-host",
     "secp256k10-guest"
 ]
+
+# Always optimize; otherwise tests take excessively long.
+[profile.dev]
+opt-level = 3
+
+[profile.dev.build-override]
+opt-level = 3
+
+[profile.release]
+lto = true
+
+[profile.release.build-override]
+opt-level = 3

@@ -10,3 +10,7 @@ ark-ec = "0.4.2"
 ark-ff = "0.4.2"
 num-bigint = "0.4.4"
 secp256k10-guest = { path = "../secp256k10-guest" }
+l2r0-small-serde = "0.20.1"
+serde = { version = "1.0.196", features = ["derive"] }
+anyhow = "1.0.79"
+bytemuck = "1.14.3"
