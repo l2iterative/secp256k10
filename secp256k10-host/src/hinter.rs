@@ -1,3 +1,4 @@
+use crate::utils::bytes_to_u32_digits;
 use crate::{MODULUS_N, MODULUS_Q};
 use ark_ff::{BigInteger, Field, LegendreSymbol, PrimeField, Zero};
 use ark_secp256k1::{Fq, Fr};
@@ -5,14 +6,14 @@ use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-#[derive(PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ComputeHint {
     pub r_y: [u32; 8],
     pub r_inv: [u32; 8],
     pub hints: Vec<[u32; 8]>,
 }
 
-#[derive(PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Hint {
     FormatError,
     YIsImaginary([u32; 8]),
@@ -25,7 +26,7 @@ pub enum Hint {
 // https://github.com/RustCrypto/signatures/blob/master/ecdsa/src/recovery.rs
 // which is under the MIT license
 impl Hint {
-    pub fn new(r: &[u8; 32], s: &[u8; 32], z: &[u8; 32], recid: u8) -> Self {
+    pub fn new(r: &[u8], s: &[u8], z: &[u8], recid: u8) -> Self {
         let r = BigUint::from_bytes_le(r);
         if r.is_zero() {
             return Self::FormatError;
@@ -65,18 +66,12 @@ impl Hint {
         });
 
         // x is reduced
-        if recid & 2 == 1 {
+        if recid & 2 != 0 {
             r_mod_q = r_mod_q + n;
             if r_mod_q.ge(&q) {
                 return Self::FormatError;
             }
         }
-
-        let bytes_to_u32_digits = |fe: &[u8]| {
-            let mut bytes = [0u8; 32];
-            bytes.copy_from_slice(fe);
-            bytemuck::cast::<[u8; 32], [u32; 8]>(bytes)
-        };
 
         let r_x = Fq::from(r_mod_q);
 
@@ -126,10 +121,10 @@ impl Hint {
                 } else {
                     let (x1, y1) = u1_sum.as_ref().unwrap();
 
-                    let slope = (y1 + &y2) * (x1 + &x2).inverse().unwrap();
+                    let slope = (y1 - &y2) * (x1 - &x2).inverse().unwrap();
                     hints.push(bytes_to_u32_digits(&slope.into_bigint().to_bytes_le()));
 
-                    let x3 = slope.square() - x1 + x2;
+                    let x3 = slope.square() - x1 - x2;
                     let y3 = slope * &(x1 - &x3) - y1;
                     u1_sum = Some((x3, y3));
                 }
@@ -159,6 +154,7 @@ impl Hint {
 
                 let x3 = slope.square() - x1 - x1;
                 let y3 = slope * &(x1 - &x3) - y1;
+
                 u2_cur = (x3, y3);
             }
 
@@ -175,6 +171,7 @@ impl Hint {
 
                     let x3 = slope.square() - &x1 - x2;
                     let y3 = slope * &(x1 - &x3) - y1;
+
                     u2_sum = Some((x3, y3));
                 }
             }

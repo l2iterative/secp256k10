@@ -53,7 +53,6 @@ mod test {
     use ark_ec::AffineRepr;
     use ark_ff::PrimeField;
     use ark_secp256k1::{Affine, Fq};
-    use std::ops::Neg;
 
     #[test]
     fn check_consistency() {

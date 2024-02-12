@@ -31,3 +31,10 @@ pub fn mul_mod(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8]) -> [u32; 8] {
     }
     res
 }
+
+#[inline]
+pub fn bytes_to_u32_digits(fe: &[u8]) -> [u32; 8] {
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(fe);
+    bytemuck::cast::<[u8; 32], [u32; 8]>(bytes)
+}

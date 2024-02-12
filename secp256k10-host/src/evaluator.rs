@@ -1,3 +1,4 @@
+use crate::utils::bytes_to_u32_digits;
 use crate::Hint;
 
 pub struct Evaluator {
@@ -21,17 +22,18 @@ pub enum EvaluationError {
     WrongHint,
 }
 
+#[derive(Debug)]
 pub enum EvaluationResult {
     Ok([u32; 16]),
     Err(EvaluationError),
 }
 
 impl Evaluator {
-    pub fn new(r: &[u8; 32], s: &[u8; 32], z: &[u8; 32], recid: u8, hint: Hint) -> Self {
+    pub fn new(r: &[u8], s: &[u8], z: &[u8], recid: u8, hint: Hint) -> Self {
         Self {
-            r: bytemuck::cast(*r),
-            s: bytemuck::cast(*s),
-            z: bytemuck::cast(*z),
+            r: bytes_to_u32_digits(r),
+            s: bytes_to_u32_digits(s),
+            z: bytes_to_u32_digits(z),
             recid,
             hint,
         }
@@ -77,14 +79,25 @@ impl Evaluator {
             0xffffffffu32,
         ];
 
+        let n_minus_one = [
+            0xd0364140u32,
+            0xbfd25e8cu32,
+            0xaf48a03bu32,
+            0xbaaedce6u32,
+            0xfffffffeu32,
+            0xffffffffu32,
+            0xffffffffu32,
+            0xffffffffu32,
+        ];
+
         let mut r_less_than_n = false;
         for i in 0..8 {
-            if self.r[7 - i] > n[i] {
+            if !r_less_than_n && self.r[7 - i] > n[7 - i] {
                 if self.hint != Hint::FormatError {
                     return EvaluationResult::Err(EvaluationError::WrongHint);
                 }
                 return EvaluationResult::Err(EvaluationError::RGeN);
-            } else if self.r[7 - i] < n[i] {
+            } else if self.r[7 - i] < n[7 - i] {
                 r_less_than_n = true;
             }
         }
@@ -98,12 +111,12 @@ impl Evaluator {
 
         let mut s_less_than_n = false;
         for i in 0..8 {
-            if self.s[7 - i] > n[i] {
+            if !s_less_than_n && self.s[7 - i] > n[7 - i] {
                 if self.hint != Hint::FormatError {
                     return EvaluationResult::Err(EvaluationError::WrongHint);
                 }
                 return EvaluationResult::Err(EvaluationError::SGeN);
-            } else if self.s[7 - i] < n[i] {
+            } else if self.s[7 - i] < n[7 - i] {
                 s_less_than_n = true;
             }
         }
@@ -130,17 +143,17 @@ impl Evaluator {
         ];
 
         // x is reduced
-        if self.recid & 2 == 1 {
+        if self.recid & 2 != 0 {
             crate::utils::add::<8, 8>(&mut r_mod_q, &n);
 
             let mut r_mod_q_less_than_q = false;
             for i in 0..8 {
-                if r_mod_q[7 - i] > n[i] {
+                if !r_mod_q_less_than_q && r_mod_q[7 - i] > n[7 - i] {
                     if self.hint != Hint::FormatError {
                         return EvaluationResult::Err(EvaluationError::WrongHint);
                     }
                     return EvaluationResult::Err(EvaluationError::RPlusNGeQ);
-                } else if r_mod_q[8 - i] < n[i] {
+                } else if r_mod_q[7 - i] < n[7 - i] {
                     r_mod_q_less_than_q = true;
                 }
             }
@@ -201,7 +214,7 @@ impl Evaluator {
             }
         }
 
-        let minus_one = [
+        let q_minus_one = [
             0xfffffc2eu32,
             0xfffffffeu32,
             0xffffffffu32,
@@ -212,7 +225,7 @@ impl Evaluator {
             0xffffffffu32,
         ];
 
-        let minus_two = [
+        let q_minus_two = [
             0xfffffc2du32,
             0xfffffffeu32,
             0xffffffffu32,
@@ -226,16 +239,16 @@ impl Evaluator {
         if self.recid & 1 == 1 {
             // y is odd
             if r_y[0] & 1 == 0 {
-                r_y = crate::utils::mul_mod(&r_y, &minus_one, &q);
+                r_y = crate::utils::mul_mod(&r_y, &q_minus_one, &q);
             }
         } else {
             // y is even
             if r_y[0] & 1 == 1 {
-                r_y = crate::utils::mul_mod(&r_y, &minus_one, &q);
+                r_y = crate::utils::mul_mod(&r_y, &q_minus_one, &q);
             }
         }
 
-        let should_be_one = crate::utils::mul_mod(&compute_hint.r_inv, &self.r, &n);
+        let should_be_one = crate::utils::mul_mod(&compute_hint.r_inv, &r_mod_q, &n);
         for i in 0..8 {
             if should_be_one[i] != one[i] {
                 return EvaluationResult::Err(EvaluationError::WrongHint);
@@ -243,7 +256,7 @@ impl Evaluator {
         }
 
         let mut u1 = crate::utils::mul_mod(&self.z, &compute_hint.r_inv, &n);
-        u1 = crate::utils::mul_mod(&u1, &minus_one, &n);
+        u1 = crate::utils::mul_mod(&u1, &n_minus_one, &n);
 
         let overflow = [0x000003d1u32, 0x1u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];
 
@@ -276,8 +289,8 @@ impl Evaluator {
             }
 
             let slope_square = crate::utils::mul_mod(&slope, &slope, &q);
-            let x1_neg = crate::utils::mul_mod(&x1, &minus_one, &q);
-            let x1_neg_two = crate::utils::mul_mod(&x1, &minus_two, &q);
+            let x1_neg = crate::utils::mul_mod(&x1, &q_minus_one, &q);
+            let x1_neg_two = crate::utils::mul_mod(&x1, &q_minus_two, &q);
 
             let mut x3 = slope_square.clone();
             let carry = crate::utils::add::<8, 8>(&mut x3, &x1_neg_two);
@@ -292,8 +305,10 @@ impl Evaluator {
                 crate::utils::add::<8, 8>(&mut x3_minus_x1, &overflow);
             }
 
-            let mut y3 = crate::utils::mul_mod(&slope, &x3_minus_x1, &q);
-            let y1_neg = crate::utils::mul_mod(&y1, &minus_one, &q);
+            let x1_minus_x3 = crate::utils::mul_mod(&x3_minus_x1, &q_minus_one, &q);
+
+            let mut y3 = crate::utils::mul_mod(&slope, &x1_minus_x3, &q);
+            let y1_neg = crate::utils::mul_mod(&y1, &q_minus_one, &q);
             let carry = crate::utils::add::<8, 8>(&mut y3, &y1_neg);
             if carry == 1 {
                 crate::utils::add::<8, 8>(&mut y3, &overflow);
@@ -309,8 +324,8 @@ impl Evaluator {
                          y2: &[u32; 8],
                          iter: &mut core::slice::Iter<[u32; 8]>|
          -> Result<([u32; 8], [u32; 8]), EvaluationError> {
-            let x2_neg = crate::utils::mul_mod(&x2, &minus_one, &q);
-            let y2_neg = crate::utils::mul_mod(&y2, &minus_one, &q);
+            let x2_neg = crate::utils::mul_mod(&x2, &q_minus_one, &q);
+            let y2_neg = crate::utils::mul_mod(&y2, &q_minus_one, &q);
 
             let mut y1_minus_y2 = y1.clone();
             let carry = crate::utils::add::<8, 8>(&mut y1_minus_y2, &y2_neg);
@@ -339,7 +354,7 @@ impl Evaluator {
             }
 
             let slope_square = crate::utils::mul_mod(&slope, &slope, &q);
-            let x1_neg = crate::utils::mul_mod(&x1, &minus_one, &q);
+            let x1_neg = crate::utils::mul_mod(&x1, &q_minus_one, &q);
 
             let mut x3 = slope_square.clone();
             let carry = crate::utils::add::<8, 8>(&mut x3, &x1_neg);
@@ -360,7 +375,7 @@ impl Evaluator {
                 crate::utils::add::<8, 8>(&mut x3_minus_x2, &overflow);
             }
 
-            let x2_minus_x3 = crate::utils::mul_mod(&x3_minus_x2, &minus_one, &q);
+            let x2_minus_x3 = crate::utils::mul_mod(&x3_minus_x2, &q_minus_one, &q);
 
             let mut y3 = crate::utils::mul_mod(&x2_minus_x3, &slope, &q);
             let carry = crate::utils::add::<8, 8>(&mut y3, &y2_neg);
@@ -394,11 +409,13 @@ impl Evaluator {
             }
         }
 
+        let u2 = crate::utils::mul_mod(&self.s, &compute_hint.r_inv, &n);
+
         let mut u2_sum = None;
         let mut u2_cur = (r_mod_q, r_y);
         for i in 0..8 {
             for j in 0..32 {
-                if !(i == 0 || j == 0) {
+                if i != 0 || j != 0 {
                     let (x1, y1) = &u2_cur;
                     let res = point_double(x1, y1, &mut iter);
                     if res.is_ok() {
@@ -408,7 +425,7 @@ impl Evaluator {
                     }
                 }
 
-                let bit = (u1[i] & (1 << j)) != 0;
+                let bit = (u2[i] & (1 << j)) != 0;
                 if bit {
                     let (x2, y2) = &u2_cur;
                     if u2_sum.is_none() {

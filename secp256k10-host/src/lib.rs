@@ -13,4 +13,10 @@ pub use hinter::{ComputeHint, Hint};
 mod evaluator;
 pub use evaluator::{EvaluationError, EvaluationResult, Evaluator};
 
+mod signer;
+pub use signer::*;
+
+#[cfg(test)]
+mod integration_test;
+
 pub(crate) mod utils;
