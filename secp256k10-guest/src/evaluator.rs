@@ -1,5 +1,6 @@
 use crate::utils::bytes_to_u32_digits;
 use crate::Hint;
+use l2r0_profiler_guest::*;
 
 pub struct Evaluator {
     pub r: [u32; 8],
@@ -40,6 +41,7 @@ impl Evaluator {
     }
 
     pub fn evaluate(&self) -> EvaluationResult {
+        start_timer!("r is zero");
         let mut r_is_zero = true;
         for i in 0..8 {
             if self.r[i] != 0 {
@@ -54,6 +56,7 @@ impl Evaluator {
             return EvaluationResult::Err(EvaluationError::RIsZero);
         }
 
+        stop_start_timer!("s is zero");
         let mut s_is_zero = true;
         for i in 0..8 {
             if self.s[i] != 0 {
@@ -90,6 +93,8 @@ impl Evaluator {
             0xffffffffu32,
         ];
 
+        stop_start_timer!("r less than n");
+
         let mut r_less_than_n = false;
         for i in 0..8 {
             if !r_less_than_n && self.r[7 - i] > n[7 - i] {
@@ -109,6 +114,8 @@ impl Evaluator {
             return EvaluationResult::Err(EvaluationError::RGeN);
         }
 
+        stop_start_timer!("s less than n");
+
         let mut s_less_than_n = false;
         for i in 0..8 {
             if !s_less_than_n && self.s[7 - i] > n[7 - i] {
@@ -124,6 +131,8 @@ impl Evaluator {
         if !s_less_than_n {
             return EvaluationResult::Err(EvaluationError::SGeN);
         }
+
+        stop_start_timer!("recid < 4");
 
         if !(self.recid < 4) {
             return EvaluationResult::Err(EvaluationError::InvalidV);
@@ -141,6 +150,8 @@ impl Evaluator {
             0xffffffffu32,
             0xffffffffu32,
         ];
+
+        stop_start_timer!("if recid & 2 != 0, x is reduced and needs to be recovered");
 
         // x is reduced
         if self.recid & 2 != 0 {
@@ -171,6 +182,8 @@ impl Evaluator {
             return EvaluationResult::Err(EvaluationError::WrongHint);
         }
 
+        stop_start_timer!("compute x3_plus_ax_plus_b");
+
         let x_sqr = crate::utils::mul_mod(&self.r, &self.r, &q);
         let x_cubic = crate::utils::mul_mod(&x_sqr, &self.r, &q);
 
@@ -181,8 +194,9 @@ impl Evaluator {
         x3_plus_ax_plus_b = crate::utils::mul_mod(&x3_plus_ax_plus_b, &one, &q);
 
         let two = [2u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];
-
         let three = [3u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];
+
+        stop_start_timer!("check if y is imaginary");
 
         if let Hint::YIsImaginary(w) = &self.hint {
             let w_sqr = crate::utils::mul_mod(w, w, &q);
@@ -207,6 +221,8 @@ impl Evaluator {
             Hint::Ok(h) => h,
             Hint::RecoveredKeyIsPointOfInfinity(h) => h,
         };
+
+        stop_start_timer!("check r_y");
 
         let mut r_y = compute_hint.r_y;
         let r_y_sqr = crate::utils::mul_mod(&r_y, &r_y, &q);
@@ -238,6 +254,8 @@ impl Evaluator {
             0xffffffffu32,
         ];
 
+        stop_start_timer!("revert r_y if needed");
+
         if self.recid & 1 == 1 {
             // y is odd
             if r_y[0] & 1 == 0 {
@@ -250,12 +268,16 @@ impl Evaluator {
             }
         }
 
+        stop_start_timer!("check r_inv");
+
         let should_be_one = crate::utils::mul_mod(&compute_hint.r_inv, &r_mod_q, &n);
         for i in 0..8 {
             if should_be_one[i] != one[i] {
                 return EvaluationResult::Err(EvaluationError::WrongHint);
             }
         }
+
+        stop_start_timer!("compute u1");
 
         let mut u1 = crate::utils::mul_mod(&self.z, &compute_hint.r_inv, &n);
         u1 = crate::utils::mul_mod(&u1, &n_minus_one, &n);
@@ -337,6 +359,7 @@ impl Evaluator {
             }
 
             let slope = slope_res.unwrap();
+
             let mut should_be_y1 = crate::utils::mul_mod(&x1_minus_x2, &slope, &q);
             let carry = crate::utils::add::<8, 8>(&mut should_be_y1, &y2);
             if carry == 1 {
@@ -384,6 +407,7 @@ impl Evaluator {
             Ok((x3, y3))
         };
 
+        stop_start_timer!("compute u1 * G");
         let mut u1_sum = None;
         for i in 0..8 {
             for j in 0..32 {
@@ -406,7 +430,11 @@ impl Evaluator {
             }
         }
 
+        stop_start_timer!("compute u2");
+
         let u2 = crate::utils::mul_mod(&self.s, &compute_hint.r_inv, &n);
+
+        stop_start_timer!("compute u2 * R");
 
         let mut u2_sum = None;
         let mut u2_cur = (r_mod_q, r_y);
@@ -439,6 +467,8 @@ impl Evaluator {
                 }
             }
         }
+
+        stop_timer!();
 
         match (u1_sum, u2_sum) {
             (Some((u1x, u1y)), Some((u2x, u2y))) => {

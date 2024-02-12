@@ -2,10 +2,14 @@ use ark_ec::AffineRepr;
 use ark_ff::{BigInteger, PrimeField, UniformRand};
 use ark_secp256k1::Fr;
 use l2r0_small_serde::to_vec_compact;
-use methods::{METHOD_ELF, METHOD_ID};
-use risc0_zkvm::{default_prover, ExecutorEnv};
+use methods::METHOD_ELF;
+use risc0_zkvm::{ExecutorEnv, ExecutorImpl};
 use secp256k10_host::{Hint, HintBuilder, PrivateKey, PublicKey};
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use l2r0_profiler_host::CycleTracer;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Task {
@@ -42,20 +46,26 @@ fn main() {
 
     let task_to_slice = to_vec_compact(&task).unwrap();
 
+    let cycle_tracer = Rc::new(RefCell::new(CycleTracer::default()));
+
     let env = ExecutorEnv::builder()
         .write(&task_to_slice)
         .unwrap()
         .write(&hint)
         .unwrap()
+        .trace_callback(|e| {
+            cycle_tracer.borrow_mut().handle_event(e);
+            Ok(())
+        })
         .build()
         .unwrap();
 
-    let prover = default_prover();
+    let mut exec = ExecutorImpl::from_elf(env, METHOD_ELF).unwrap();
+    let session = exec.run().unwrap();
 
-    let receipt = prover.prove(env, METHOD_ELF).unwrap();
-    receipt.verify(METHOD_ID).unwrap();
+    cycle_tracer.borrow().print();
 
-    let journal = receipt.journal.bytes;
+    let journal = session.journal.unwrap().bytes;
     assert_eq!(
         journal[0..32],
         vk.0.x().unwrap().into_bigint().to_bytes_le()

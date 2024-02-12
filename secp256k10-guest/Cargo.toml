@@ -2,10 +2,15 @@
 name = "secp256k10-guest"
 version = "0.1.0"
 authors = ["Weikeng Chen <weikeng.chen@l2iterative.com>"]
+edition = "2021"
 
 [dependencies]
 serde = { version = "1.0.196", features = ["derive"] }
 bytemuck = "1.14.3"
+l2r0-profiler-guest = "0.21.0"
 
 [target.'cfg(not(target_os = "zkvm"))'.dependencies]
 num-bigint = "0.4.4"
+
+[features]
+print-trace = ["l2r0-profiler-guest/print-trace"]

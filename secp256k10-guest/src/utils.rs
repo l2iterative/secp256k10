@@ -9,11 +9,12 @@ extern "C" {
     );
 }
 
+#[inline(always)]
 pub fn add32_and_overflow(a: u32, b: u32, carry: u32) -> (u32, u32) {
     let v = (a as u64).wrapping_add(b as u64).wrapping_add(carry as u64);
     ((v >> 32) as u32, (v & 0xffffffff) as u32)
 }
-#[inline(always)]
+#[inline]
 pub fn add<const I: usize, const J: usize>(accm: &mut [u32; I], new: &[u32; J]) -> u32 {
     let mut carry = 0;
     (carry, accm[0]) = add32_and_overflow(accm[0], new[0], carry);
