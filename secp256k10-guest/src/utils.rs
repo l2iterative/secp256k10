@@ -42,7 +42,7 @@ pub fn mul_mod(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8]) -> [u32; 8] {
 }
 
 #[cfg(target_os = "zkvm")]
-#[inline]
+#[inline(always)]
 pub fn mul_mod(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8]) -> [u32; 8] {
     let mut res = [0u32; 8];
 

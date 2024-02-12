@@ -180,6 +180,8 @@ impl Evaluator {
         let one = [1u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];
         x3_plus_ax_plus_b = crate::utils::mul_mod(&x3_plus_ax_plus_b, &one, &q);
 
+        let two = [2u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];
+
         let three = [3u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];
 
         if let Hint::YIsImaginary(w) = &self.hint {
@@ -269,11 +271,7 @@ impl Evaluator {
             let x1_sqr = crate::utils::mul_mod(x1, x1, &q);
             let x1_sqr_three = crate::utils::mul_mod(&x1_sqr, &three, &q);
 
-            let mut y1_dbl = y1.clone();
-            let carry = crate::utils::add::<8, 8>(&mut y1_dbl, &y1);
-            if carry == 1 {
-                crate::utils::add::<8, 8>(&mut y1_dbl, &overflow);
-            }
+            let y1_dbl = crate::utils::mul_mod(y1, &two, &q);
 
             let slope_res = iter.next();
             if slope_res.is_none() {
@@ -327,13 +325,6 @@ impl Evaluator {
             let x2_neg = crate::utils::mul_mod(&x2, &q_minus_one, &q);
             let y2_neg = crate::utils::mul_mod(&y2, &q_minus_one, &q);
 
-            let mut y1_minus_y2 = y1.clone();
-            let carry = crate::utils::add::<8, 8>(&mut y1_minus_y2, &y2_neg);
-            if carry == 1 {
-                crate::utils::add::<8, 8>(&mut y1_minus_y2, &overflow);
-            }
-            y1_minus_y2 = crate::utils::mul_mod(&y1_minus_y2, &one, &q);
-
             let mut x1_minus_x2 = x1.clone();
             let carry = crate::utils::add::<8, 8>(&mut x1_minus_x2, &x2_neg);
             if carry == 1 {
@@ -346,9 +337,15 @@ impl Evaluator {
             }
 
             let slope = slope_res.unwrap();
-            let should_be_y1_minus_y2 = crate::utils::mul_mod(&x1_minus_x2, &slope, &q);
+            let mut should_be_y1 = crate::utils::mul_mod(&x1_minus_x2, &slope, &q);
+            let carry = crate::utils::add::<8, 8>(&mut should_be_y1, &y2);
+            if carry == 1 {
+                crate::utils::add::<8, 8>(&mut should_be_y1, &overflow);
+            }
+            should_be_y1 = crate::utils::mul_mod(&should_be_y1, &one, &q);
+
             for i in 0..8 {
-                if should_be_y1_minus_y2[i] != y1_minus_y2[i] {
+                if should_be_y1[i] != y1[i] {
                     return Err(EvaluationError::WrongHint);
                 }
             }

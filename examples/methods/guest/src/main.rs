@@ -13,7 +13,6 @@ pub struct Task {
 
 fn main() {
     let task_slice: Vec<u32> = env::read();
-
     let task: Task = from_slice_compact(&task_slice).unwrap();
     let hint: Hint = env::read();
 
@@ -36,9 +35,8 @@ fn main() {
             unreachable!()
         }
     };
+    let cycle_count_after = env::cycle_count();
 
     env::commit_slice(&pk_recovered);
-
-    let cycle_count_after = env::cycle_count();
     eprintln!("before evaluation: {}, after evaluation: {}", cycle_count_before, cycle_count_after);
 }
