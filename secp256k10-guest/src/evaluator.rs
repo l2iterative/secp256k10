@@ -392,7 +392,7 @@ impl Evaluator {
             for j in 0..32 {
                 let bit = (u1[i] & (1 << j)) != 0;
                 if bit {
-                    let (x2, y2) = secp256k10_guest::G_TABLES[i * 32 + j];
+                    let (x2, y2) = crate::G_TABLES[i * 32 + j];
 
                     if u1_sum.is_none() {
                         u1_sum = Some((x2, y2));

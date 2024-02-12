@@ -5,3 +5,7 @@ authors = ["Weikeng Chen <weikeng.chen@l2iterative.com>"]
 
 [dependencies]
 serde = { version = "1.0.196", features = ["derive"] }
+bytemuck = "1.14.3"
+
+[target.'cfg(not(target_os = "zkvm"))'.dependencies]
+num-bigint = "0.4.4"

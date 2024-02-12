@@ -7,6 +7,7 @@ use std::ops::Mul;
 
 pub struct PrivateKey(pub Fr);
 pub struct PublicKey(pub Affine);
+
 pub struct Signature {
     pub r: Fr,
     pub s: Fr,

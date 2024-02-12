@@ -1,9 +1,10 @@
-use crate::utils::bytes_to_u32_digits;
-use crate::{EvaluationResult, Evaluator, Hint, PrivateKey, PublicKey};
+use crate::bytes_to_u32_digits;
+use crate::{HintBuilder, PrivateKey, PublicKey};
 use ark_ec::AffineRepr;
 use ark_ff::{BigInteger, PrimeField, UniformRand};
 use ark_secp256k1::Fr;
 use rand::thread_rng;
+use secp256k10_guest::{EvaluationResult, Evaluator, Hint};
 
 #[test]
 fn test_signature() {
@@ -26,7 +27,7 @@ fn generate_hint() {
 
     let sig = pk.sign(&mut prng, &z);
 
-    let hint = Hint::new(
+    let hint = HintBuilder::build(
         &sig.r.into_bigint().to_bytes_le(),
         &sig.s.into_bigint().to_bytes_le(),
         &z.into_bigint().to_bytes_le(),
@@ -46,7 +47,7 @@ fn evaluate_hint() {
 
     let sig = pk.sign(&mut prng, &z);
 
-    let hint = Hint::new(
+    let hint = HintBuilder::build(
         &sig.r.into_bigint().to_bytes_le(),
         &sig.s.into_bigint().to_bytes_le(),
         &z.into_bigint().to_bytes_le(),

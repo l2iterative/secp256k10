@@ -2,3 +2,14 @@
 name = "host"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+ark-secp256k1 = "0.4.0"
+ark-ec = "0.4.2"
+ark-ff = "0.4.2"
+secp256k10-host = { path = "../../secp256k10-host" }
+methods = { path = "../methods" }
+rand = "0.8.5"
+risc0-zkvm = { version = "0.20.1" }
+serde = { version = "1.0.196", features = ["derive"] }
+l2r0-small-serde = "0.20.1"

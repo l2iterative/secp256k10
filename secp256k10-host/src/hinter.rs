@@ -1,40 +1,27 @@
-use crate::utils::bytes_to_u32_digits;
+use crate::bytes_to_u32_digits;
 use crate::{MODULUS_N, MODULUS_Q};
 use ark_ff::{BigInteger, Field, LegendreSymbol, PrimeField, Zero};
 use ark_secp256k1::{Fq, Fr};
 use num_bigint::BigUint;
-use serde::{Deserialize, Serialize};
+use secp256k10_guest::{ComputeHint, Hint};
 use std::str::FromStr;
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ComputeHint {
-    pub r_y: [u32; 8],
-    pub r_inv: [u32; 8],
-    pub hints: Vec<[u32; 8]>,
-}
-
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Hint {
-    FormatError,
-    YIsImaginary([u32; 8]),
-    Ok(ComputeHint),
-    RecoveredKeyIsPointOfInfinity(ComputeHint),
-}
+pub struct HintBuilder {}
 
 // The implementation here follows the code in
 // https://github.com/rust-bitcoin/rust-secp256k1/blob/master/secp256k1-sys/depend/secp256k1/src/modules/recovery/main_impl.h#L87
 // https://github.com/RustCrypto/signatures/blob/master/ecdsa/src/recovery.rs
 // which is under the MIT license
-impl Hint {
-    pub fn new(r: &[u8], s: &[u8], z: &[u8], recid: u8) -> Self {
+impl HintBuilder {
+    pub fn build(r: &[u8], s: &[u8], z: &[u8], recid: u8) -> Hint {
         let r = BigUint::from_bytes_le(r);
         if r.is_zero() {
-            return Self::FormatError;
+            return Hint::FormatError;
         }
 
         let s = BigUint::from_bytes_le(s);
         if s.is_zero() {
-            return Self::FormatError;
+            return Hint::FormatError;
         }
 
         let n = MODULUS_N.get_or_init(|| {
@@ -45,15 +32,15 @@ impl Hint {
         });
 
         if r.ge(&n) {
-            return Self::FormatError;
+            return Hint::FormatError;
         }
 
         if s.ge(&n) {
-            return Self::FormatError;
+            return Hint::FormatError;
         }
 
         if !(recid < 4) {
-            return Self::FormatError;
+            return Hint::FormatError;
         }
 
         let mut r_mod_q = r.clone();
@@ -69,7 +56,7 @@ impl Hint {
         if recid & 2 != 0 {
             r_mod_q = r_mod_q + n;
             if r_mod_q.ge(&q) {
-                return Self::FormatError;
+                return Hint::FormatError;
             }
         }
 
@@ -81,7 +68,7 @@ impl Hint {
             // One QNR is 3
             let mut witness = x3_plus_ax_plus_b.double() + x3_plus_ax_plus_b;
             witness = witness.sqrt().unwrap();
-            return Self::YIsImaginary(bytes_to_u32_digits(&witness.into_bigint().to_bytes_le()));
+            return Hint::YIsImaginary(bytes_to_u32_digits(&witness.into_bigint().to_bytes_le()));
         }
 
         let mut r_y = x3_plus_ax_plus_b.sqrt().unwrap();
@@ -192,7 +179,7 @@ impl Hint {
                             r_inv: r_inv_digits,
                             hints,
                         };
-                        return Self::RecoveredKeyIsPointOfInfinity(compute_hints);
+                        return Hint::RecoveredKeyIsPointOfInfinity(compute_hints);
                     } else {
                         let u1x_sqr = u1x.square();
                         let u1y_dbl = u1y.double();
@@ -217,10 +204,6 @@ impl Hint {
             hints,
         };
 
-        return Self::Ok(res);
-    }
-
-    pub fn to_slice(&self) -> anyhow::Result<Vec<u32>> {
-        Ok(l2r0_small_serde::to_vec_compact(self)?)
+        return Hint::Ok(res);
     }
 }
