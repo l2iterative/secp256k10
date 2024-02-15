@@ -29,13 +29,17 @@ fn main() {
 
     let sig = pk.sign(&mut prng, &z);
 
-    let hint = HintBuilder::build(
+    let (hint, Some(compute_hint)) = HintBuilder::build(
         &sig.r.into_bigint().to_bytes_le(),
         &sig.s.into_bigint().to_bytes_le(),
         &z.into_bigint().to_bytes_le(),
         sig.v,
-    );
-    assert!(matches!(hint, Hint::Ok(_)));
+    ) else {
+        unreachable!()
+    };
+    assert!(matches!(hint, Hint::Ok));
+
+    let compute_hint_vec = compute_hint.to_vec();
 
     let task = Task {
         r: sig.r.into_bigint().to_bytes_le(),
@@ -53,6 +57,9 @@ fn main() {
         .unwrap()
         .write(&hint)
         .unwrap()
+        .write(&(compute_hint_vec.len() as u32))
+        .unwrap()
+        .write_slice(&compute_hint_vec)
         .trace_callback(|e| {
             cycle_tracer.borrow_mut().handle_event(e);
             Ok(())

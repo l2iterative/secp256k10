@@ -1,13 +1,15 @@
-use crate::utils::bytes_to_u32_digits;
+use crate::hinter::ComputeHintProvider;
+use crate::utils::{bytes_to_u32_digits, mul_mod, mul_quotient};
 use crate::Hint;
 use l2r0_profiler_guest::*;
 
-pub struct Evaluator {
+pub struct Evaluator<'a> {
     pub r: [u32; 8],
     pub s: [u32; 8],
     pub z: [u32; 8],
     pub recid: u8,
     pub hint: Hint,
+    pub compute_hint: Option<ComputeHintProvider<'a>>,
 }
 
 #[derive(Debug)]
@@ -29,19 +31,28 @@ pub enum EvaluationResult {
     Err(EvaluationError),
 }
 
-impl Evaluator {
-    pub fn new(r: &[u8], s: &[u8], z: &[u8], recid: u8, hint: Hint) -> Self {
+impl<'a> Evaluator<'a> {
+    pub fn new(
+        r: &[u8],
+        s: &[u8],
+        z: &[u8],
+        recid: u8,
+        hint: Hint,
+        compute_hint: Option<ComputeHintProvider<'a>>,
+    ) -> Self {
         Self {
             r: bytes_to_u32_digits(r),
             s: bytes_to_u32_digits(s),
             z: bytes_to_u32_digits(z),
             recid,
             hint,
+            compute_hint,
         }
     }
 
     pub fn evaluate(&self) -> EvaluationResult {
         start_timer!("r is zero");
+
         let mut r_is_zero = true;
         for i in 0..8 {
             if self.r[i] != 0 {
@@ -57,6 +68,7 @@ impl Evaluator {
         }
 
         stop_start_timer!("s is zero");
+
         let mut s_is_zero = true;
         for i in 0..8 {
             if self.s[i] != 0 {
@@ -211,20 +223,11 @@ impl Evaluator {
             return EvaluationResult::Err(EvaluationError::YIsImaginary);
         }
 
-        let compute_hint = match &self.hint {
-            Hint::FormatError => {
-                unreachable!()
-            }
-            Hint::YIsImaginary(_) => {
-                unreachable!()
-            }
-            Hint::Ok(h) => h,
-            Hint::RecoveredKeyIsPointOfInfinity(h) => h,
-        };
+        let compute_hint = self.compute_hint.as_ref().unwrap();
 
         stop_start_timer!("check r_y");
 
-        let mut r_y = compute_hint.r_y;
+        let mut r_y = compute_hint.get_r_y().clone();
         let r_y_sqr = crate::utils::mul_mod(&r_y, &r_y, &q);
         for i in 0..8 {
             if r_y_sqr[i] != x3_plus_ax_plus_b[i] {
@@ -270,7 +273,7 @@ impl Evaluator {
 
         stop_start_timer!("check r_inv");
 
-        let should_be_one = crate::utils::mul_mod(&compute_hint.r_inv, &r_mod_q, &n);
+        let should_be_one = crate::utils::mul_mod(&compute_hint.get_r_inv(), &r_mod_q, &n);
         for i in 0..8 {
             if should_be_one[i] != one[i] {
                 return EvaluationResult::Err(EvaluationError::WrongHint);
@@ -279,24 +282,102 @@ impl Evaluator {
 
         stop_start_timer!("compute u1");
 
-        let mut u1 = crate::utils::mul_mod(&self.z, &compute_hint.r_inv, &n);
+        let mut u1 = crate::utils::mul_mod(&self.z, &compute_hint.get_r_inv(), &n);
         u1 = crate::utils::mul_mod(&u1, &n_minus_one, &n);
+
+        stop_start_timer!("decompose u1");
+
+        let endo_coeff = [
+            0x8e6afa40u32,
+            0x3ec693d6u32,
+            0xed0a766au32,
+            0x630fb68au32,
+            0x53cbcb16u32,
+            0x919bb861u32,
+            0x9a83f8efu32,
+            0x851695d4u32
+        ];
+
+        let n11 = [
+            0x9284eb15u32,
+            0xe86c90e4u32,
+            0xa7d46bcdu32,
+            0x3086d221u32,
+            0u32,
+            0u32,
+            0u32,
+            0u32,
+        ];
+
+        let n12 = [
+            0x9d44cfd8u32,
+            0x57c1108du32,
+            0xa8e2f3f6u32,
+            0x14ca50f7u32,
+            0x1u32,
+            0x0u32,
+            0x0u32,
+            0x0u32,
+        ];
+
+        let n21_neg = [
+            0x0abfe4c3u32,
+            0x6f547fa9u32,
+            0x010e8828u32,
+            0xe4437ed6u32,
+            0u32,
+            0u32,
+            0u32,
+            0u32
+        ];
+
+        let n22 = [
+            0x9284eb15u32,
+            0xe86c90e4u32,
+            0xa7d46bcdu32,
+            0x3086d221u32,
+            0u32,
+            0u32,
+            0u32,
+            0u32
+        ];
+
+        let beta_1 = mul_quotient(&u1, &n22, &n, &n_minus_one);
+        let beta_2 = mul_quotient(&u1, &n12, &n, &n_minus_one);
+
+        let u256_bound = [
+            0xffffffffu32,
+            0xffffffffu32,
+            0xffffffffu32,
+            0xffffffffu32,
+            0xffffffffu32,
+            0xffffffffu32,
+            0xffffffffu32,
+            0xffffffffu32,
+        ];
+
+        let b11 = mul_mod(&beta_1, &n11, &u256_bound);
+        let b12_neg = mul_mod(&beta_2, &n21_neg, &u256_bound);
+
+        let b21 = mul_mod(&beta_1, &n11, &u256_bound);
+        let b22 = mul_mod(&beta_2, &n22, &u256_bound);
 
         let overflow = [0x000003d1u32, 0x1u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];
 
-        let mut iter = compute_hint.hints.as_slice().into_iter();
+        let mut hint_counter = 0;
 
         let point_double = |x1: &[u32; 8],
                             y1: &[u32; 8],
-                            iter: &mut core::slice::Iter<[u32; 8]>|
+                            hint_counter: &mut usize|
          -> Result<([u32; 8], [u32; 8]), EvaluationError> {
             let x1_sqr = crate::utils::mul_mod(x1, x1, &q);
             let x1_sqr_three = crate::utils::mul_mod(&x1_sqr, &three, &q);
 
             let y1_dbl = crate::utils::mul_mod(y1, &two, &q);
 
-            let slope_res = iter.next();
-            if slope_res.is_none() {
+            let slope_res = compute_hint.get_hints(*hint_counter);
+            *hint_counter += 1;
+            if slope_res.is_err() {
                 return Err(EvaluationError::WrongHint);
             }
 
@@ -342,7 +423,7 @@ impl Evaluator {
                          y1: &[u32; 8],
                          x2: &[u32; 8],
                          y2: &[u32; 8],
-                         iter: &mut core::slice::Iter<[u32; 8]>|
+                         hint_counter: &mut usize|
          -> Result<([u32; 8], [u32; 8]), EvaluationError> {
             let x2_neg = crate::utils::mul_mod(&x2, &q_minus_one, &q);
             let y2_neg = crate::utils::mul_mod(&y2, &q_minus_one, &q);
@@ -353,8 +434,9 @@ impl Evaluator {
                 crate::utils::add::<8, 8>(&mut x1_minus_x2, &overflow);
             }
 
-            let slope_res = iter.next();
-            if slope_res.is_none() {
+            let slope_res = compute_hint.get_hints(*hint_counter);
+            *hint_counter += 1;
+            if slope_res.is_err() {
                 return Err(EvaluationError::WrongHint);
             }
 
@@ -419,7 +501,7 @@ impl Evaluator {
                         u1_sum = Some((x2, y2));
                     } else {
                         let (x1, y1) = u1_sum.as_ref().unwrap();
-                        let res = point_add(x1, y1, &x2, &y2, &mut iter);
+                        let res = point_add(x1, y1, &x2, &y2, &mut hint_counter);
                         if res.is_ok() {
                             u1_sum = Some(res.unwrap());
                         } else {
@@ -432,7 +514,7 @@ impl Evaluator {
 
         stop_start_timer!("compute u2");
 
-        let u2 = crate::utils::mul_mod(&self.s, &compute_hint.r_inv, &n);
+        let u2 = crate::utils::mul_mod(&self.s, &compute_hint.get_r_inv(), &n);
 
         stop_start_timer!("compute u2 * R");
 
@@ -442,7 +524,7 @@ impl Evaluator {
             for j in 0..32 {
                 if i != 0 || j != 0 {
                     let (x1, y1) = &u2_cur;
-                    let res = point_double(x1, y1, &mut iter);
+                    let res = point_double(x1, y1, &mut hint_counter);
                     if res.is_ok() {
                         u2_cur = res.unwrap();
                     } else {
@@ -457,7 +539,7 @@ impl Evaluator {
                         u2_sum = Some((*x2, *y2));
                     } else {
                         let (x1, y1) = u2_sum.unwrap();
-                        let res = point_add(&x1, &y1, x2, y2, &mut iter);
+                        let res = point_add(&x1, &y1, x2, y2, &mut hint_counter);
                         if res.is_ok() {
                             u2_sum = Some(res.unwrap());
                         } else {
@@ -478,7 +560,7 @@ impl Evaluator {
                             EvaluationError::RecoveredKeyIsPointOfInfinity,
                         );
                     } else {
-                        let res = point_double(&u1x, &u1y, &mut iter);
+                        let res = point_double(&u1x, &u1y, &mut hint_counter);
                         if let Ok(res) = res {
                             let mut pk = [0u32; 16];
                             pk[0..8].copy_from_slice(&res.0);
@@ -489,7 +571,7 @@ impl Evaluator {
                         }
                     }
                 } else {
-                    let res = point_add(&u1x, &u1y, &u2x, &u2y, &mut iter);
+                    let res = point_add(&u1x, &u1y, &u2x, &u2y, &mut hint_counter);
                     if let Ok(res) = res {
                         let mut pk = [0u32; 16];
                         pk[0..8].copy_from_slice(&res.0);

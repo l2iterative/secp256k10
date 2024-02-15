@@ -4,7 +4,7 @@ use ark_ec::AffineRepr;
 use ark_ff::{BigInteger, PrimeField, UniformRand};
 use ark_secp256k1::Fr;
 use rand::thread_rng;
-use secp256k10_guest::{EvaluationResult, Evaluator, Hint};
+use secp256k10_guest::{ComputeHintProvider, EvaluationResult, Evaluator, Hint};
 
 #[test]
 fn test_signature() {
@@ -27,13 +27,13 @@ fn generate_hint() {
 
     let sig = pk.sign(&mut prng, &z);
 
-    let hint = HintBuilder::build(
+    let (hint, _) = HintBuilder::build(
         &sig.r.into_bigint().to_bytes_le(),
         &sig.s.into_bigint().to_bytes_le(),
         &z.into_bigint().to_bytes_le(),
         sig.v,
     );
-    assert!(matches!(hint, Hint::Ok(_)))
+    assert!(matches!(hint, Hint::Ok))
 }
 
 #[test]
@@ -47,13 +47,18 @@ fn evaluate_hint() {
 
     let sig = pk.sign(&mut prng, &z);
 
-    let hint = HintBuilder::build(
+    let (hint, Some(compute_hint)) = HintBuilder::build(
         &sig.r.into_bigint().to_bytes_le(),
         &sig.s.into_bigint().to_bytes_le(),
         &z.into_bigint().to_bytes_le(),
         sig.v,
-    );
-    assert!(matches!(hint, Hint::Ok(_)));
+    ) else {
+        unreachable!()
+    };
+    assert!(matches!(hint, Hint::Ok));
+
+    let compute_hint_vec = compute_hint.to_vec();
+    let compute_hint_provider = ComputeHintProvider::new(&compute_hint_vec);
 
     let eval = Evaluator::new(
         &sig.r.into_bigint().to_bytes_le(),
@@ -61,6 +66,7 @@ fn evaluate_hint() {
         &z.into_bigint().to_bytes_le(),
         sig.v,
         hint,
+        Some(compute_hint_provider),
     );
 
     let res = eval.evaluate();

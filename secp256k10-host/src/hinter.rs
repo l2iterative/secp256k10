@@ -13,15 +13,15 @@ pub struct HintBuilder {}
 // https://github.com/RustCrypto/signatures/blob/master/ecdsa/src/recovery.rs
 // which is under the MIT license
 impl HintBuilder {
-    pub fn build(r: &[u8], s: &[u8], z: &[u8], recid: u8) -> Hint {
+    pub fn build(r: &[u8], s: &[u8], z: &[u8], recid: u8) -> (Hint, Option<ComputeHint>) {
         let r = BigUint::from_bytes_le(r);
         if r.is_zero() {
-            return Hint::FormatError;
+            return (Hint::FormatError, None);
         }
 
         let s = BigUint::from_bytes_le(s);
         if s.is_zero() {
-            return Hint::FormatError;
+            return (Hint::FormatError, None);
         }
 
         let n = MODULUS_N.get_or_init(|| {
@@ -32,15 +32,15 @@ impl HintBuilder {
         });
 
         if r.ge(&n) {
-            return Hint::FormatError;
+            return (Hint::FormatError, None);
         }
 
         if s.ge(&n) {
-            return Hint::FormatError;
+            return (Hint::FormatError, None);
         }
 
         if !(recid < 4) {
-            return Hint::FormatError;
+            return (Hint::FormatError, None);
         }
 
         let mut r_mod_q = r.clone();
@@ -56,7 +56,7 @@ impl HintBuilder {
         if recid & 2 != 0 {
             r_mod_q = r_mod_q + n;
             if r_mod_q.ge(&q) {
-                return Hint::FormatError;
+                return (Hint::FormatError, None);
             }
         }
 
@@ -68,7 +68,10 @@ impl HintBuilder {
             // One QNR is 3
             let mut witness = x3_plus_ax_plus_b.double() + x3_plus_ax_plus_b;
             witness = witness.sqrt().unwrap();
-            return Hint::YIsImaginary(bytes_to_u32_digits(&witness.into_bigint().to_bytes_le()));
+            return (
+                Hint::YIsImaginary(bytes_to_u32_digits(&witness.into_bigint().to_bytes_le())),
+                None,
+            );
         }
 
         let mut r_y = x3_plus_ax_plus_b.sqrt().unwrap();
@@ -179,7 +182,7 @@ impl HintBuilder {
                             r_inv: r_inv_digits,
                             hints,
                         };
-                        return Hint::RecoveredKeyIsPointOfInfinity(compute_hints);
+                        return (Hint::RecoveredKeyIsPointOfInfinity, Some(compute_hints));
                     } else {
                         let u1x_sqr = u1x.square();
                         let u1y_dbl = u1y.double();
@@ -198,12 +201,12 @@ impl HintBuilder {
             }
         }
 
-        let res = ComputeHint {
+        let compute_hint = ComputeHint {
             r_y: r_y_digits,
             r_inv: r_inv_digits,
             hints,
         };
 
-        return Hint::Ok(res);
+        return (Hint::Ok, Some(compute_hint));
     }
 }
