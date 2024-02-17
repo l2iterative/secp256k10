@@ -1,16 +1,24 @@
 use ark_ec::{AffineRepr, CurveGroup, Group};
-use ark_ff::{BigInteger, PrimeField};
+use ark_ff::{BigInteger, PrimeField, UniformRand};
 use ark_secp256k1::Affine;
 use std::ops::Add;
+use std::str::FromStr;
+use num_bigint::BigInt;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 
 pub struct TableGeneration {
-    pub g_series: [[([u32; 8], [u32; 8]); 7]; 32],
-    pub g_last_one: ([u32; 8], [u32; 8])
+    pub g_series: [[([u32; 8], [u32; 8]); 8]; 32],
+    pub g_last_one: ([u32; 8], [u32; 8]),
+    pub g_base_1: ([u32; 8], [u32; 8]),
+    pub g_base_2: ([u32; 8], [u32; 8]),
 }
 
 impl TableGeneration {
     pub fn new() -> Self {
-        let mut res = [[([0u32; 8], [0u32; 8]); 7]; 32];
+        let mut res = [[([0u32; 8], [0u32; 8]); 8]; 32];
+
+        let mut base = Affine::identity();
 
         let mut cur = Affine::generator();
         for i in 0..32 {
@@ -79,6 +87,15 @@ impl TableGeneration {
             res[i][6].1.copy_from_slice(&bytemuck::cast_slice(
                 &table_cur.y().unwrap().into_bigint().to_bytes_le(),
             ));
+
+            table_cur = table_cur.add(&cur).into_affine();
+            res[i][7].0.copy_from_slice(&bytemuck::cast_slice(
+                &table_cur.x().unwrap().into_bigint().to_bytes_le(),
+            ));
+            res[i][7].1.copy_from_slice(&bytemuck::cast_slice(
+                &table_cur.y().unwrap().into_bigint().to_bytes_le(),
+            ));
+            base = base.add(&table_cur).into_affine();
         }
 
         cur = cur
@@ -89,12 +106,33 @@ impl TableGeneration {
             .double()
             .into_affine();
 
-
         let mut g_last_one = ([0u32; 8], [0u32; 8]);
-        g_last_one.0.copy_from_slice(&bytemuck::cast_slice(&cur.x().unwrap().into_bigint().to_bytes_le()));
-        g_last_one.1.copy_from_slice(&bytemuck::cast_slice(&cur.y().unwrap().into_bigint().to_bytes_le()));
+        g_last_one.0.copy_from_slice(&bytemuck::cast_slice(
+            &cur.x().unwrap().into_bigint().to_bytes_le(),
+        ));
+        g_last_one.1.copy_from_slice(&bytemuck::cast_slice(
+            &cur.y().unwrap().into_bigint().to_bytes_le(),
+        ));
 
-        Self { g_series: res, g_last_one }
+        let mut prng = ChaCha20Rng::seed_from_u64(0u64);
+        let affine_protector2 = Affine::rand(&mut prng);
+        let affine_protector1 = affine_protector2.mul_bigint(
+            BigInt::from_str()
+        );
+
+        let mut g_base = ([0u32; 8], [0u32; 8]);
+        g_base.0.copy_from_slice(&bytemuck::cast_slice(
+            &base.x().unwrap().into_bigint().to_bytes_le(),
+        ));
+        g_base.1.copy_from_slice(&bytemuck::cast_slice(
+            &base.y().unwrap().into_bigint().to_bytes_le(),
+        ));
+
+        Self {
+            g_series: res,
+            g_last_one,
+            g_base,
+        }
     }
 
     pub fn print(&self) {
@@ -103,7 +141,7 @@ impl TableGeneration {
         print!("[");
         for i in 0..32 {
             println!("[");
-            for j in 0..7 {
+            for j in 0..8 {
                 println!("([");
                 for v in self.g_series[i][j].0.iter() {
                     print!("{}u32,", v);
@@ -132,6 +170,20 @@ impl TableGeneration {
             print!("{}u32,", v);
         }
         println!("])");
+
+        println!();
+
+        println!("Base entry:");
+        println!("([");
+        for v in self.g_base.0.iter() {
+            print!("{}u32,", v);
+        }
+        print!("],");
+        print!("[");
+        for v in self.g_base.1.iter() {
+            print!("{}u32,", v);
+        }
+        println!("])");
     }
 }
 
@@ -139,9 +191,9 @@ impl TableGeneration {
 mod test {
     use crate::table_generation::TableGeneration;
     use ark_ec::{AffineRepr, CurveGroup};
-    use ark_ff::{BigInteger, PrimeField};
+    use ark_ff::{BigInteger, Field, PrimeField};
     use ark_secp256k1::{Affine, Fq, Fr};
-    use std::ops::Mul;
+    use std::ops::{AddAssign, Mul};
 
     #[test]
     fn check_consistency() {
@@ -149,7 +201,7 @@ mod test {
         hint.print();
 
         for i in 0..32 {
-            for j in 0..7 {
+            for j in 0..8 {
                 let mut r_bigint = Fr::from((j + 1) as u8).into_bigint();
                 r_bigint.muln((i as u32) * 4);
 
@@ -171,20 +223,37 @@ mod test {
             }
         }
 
-        let mut r_bigint = Fr::from(2 as u8).into_bigint();
-        r_bigint.muln(129);
+        let mut r_bigint = Fr::from(1 as u8).into_bigint();
+        r_bigint.muln(128);
         let r = Fr::from_bigint(r_bigint).unwrap();
         let point_r = Affine::generator().mul(&r).into_affine();
 
         let x = point_r.x;
         let y = point_r.y;
 
-        let x_reconstructed = Fq::from_le_bytes_mod_order(
-            &bytemuck::cast_slice::<u32, u8>(&hint.g_last_one.0),
-        );
-        let y_reconstructed = Fq::from_le_bytes_mod_order(
-            &bytemuck::cast_slice::<u32, u8>(&hint.g_last_one.1),
-        );
+        let x_reconstructed =
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_last_one.0));
+        let y_reconstructed =
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_last_one.1));
+
+        assert_eq!(x, x_reconstructed);
+        assert_eq!(y, y_reconstructed);
+
+        let mut r = Fr::ZERO;
+        for i in 0..32 {
+            let mut tmp_bigint = Fr::from(8 as u8).into_bigint();
+            tmp_bigint.muln(i * 4);
+            r.add_assign(Fr::from_bigint(tmp_bigint).unwrap());
+        }
+        let point_r = Affine::generator().mul(&r).into_affine();
+
+        let x = point_r.x;
+        let y = point_r.y;
+
+        let x_reconstructed =
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base.0));
+        let y_reconstructed =
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base.1));
 
         assert_eq!(x, x_reconstructed);
         assert_eq!(y, y_reconstructed);

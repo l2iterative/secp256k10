@@ -1,5 +1,3 @@
-use std::ops::{Add, Div, Mul, Rem, Sub};
-
 #[cfg(target_os = "zkvm")]
 extern "C" {
     fn sys_bigint(
@@ -90,10 +88,13 @@ pub fn mul_mod(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8]) -> [u32; 8] {
 
 #[cfg(not(target_os = "zkvm"))]
 pub fn mul_quotient(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8], n_minus_one: &[u32; 8]) -> [u32; 8] {
+    use std::ops::{Add, Mul, Rem, Sub};
+
     let a = num_bigint::BigUint::from_bytes_le(bytemuck::cast_slice::<_, u8>(a));
     let b = num_bigint::BigUint::from_bytes_le(bytemuck::cast_slice::<_, u8>(b));
     let n = num_bigint::BigUint::from_bytes_le(bytemuck::cast_slice::<_, u8>(n));
-    let n_minus_one = num_bigint::BigUint::from_bytes_le(bytemuck::cast_slice::<_, u8>(n_minus_one));
+    let n_minus_one =
+        num_bigint::BigUint::from_bytes_le(bytemuck::cast_slice::<_, u8>(n_minus_one));
 
     let r = (&a).mul(&b).rem(&n);
     let r_prime = (&a).mul(&b).rem(&n_minus_one);
@@ -137,7 +138,7 @@ pub fn mul_quotient(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8], n_minus_one: &[u32
         );
     }
 
-    let r_greater_than_r_prime = false;
+    let mut r_greater_than_r_prime = false;
     for i in 0..8 {
         if r[7 - i] > r_prime[7 - i] {
             r_greater_than_r_prime = true;
@@ -157,7 +158,7 @@ pub fn mul_quotient(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8], n_minus_one: &[u32
             sys_bigint(
                 &mut r_prime as *mut [u32; 8],
                 0u32,
-                r as *const [u32; 8],
+                &r as *const [u32; 8],
                 n_minus_one as *const [u32; 8],
                 n as *const [u32; 8],
             );
@@ -172,7 +173,6 @@ pub fn mul_quotient(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8], n_minus_one: &[u32
     }
 }
 
-
 #[inline]
 pub fn bytes_to_u32_digits(fe: &[u8]) -> [u32; 8] {
     let mut bytes = [0u8; 32];
@@ -181,7 +181,7 @@ pub fn bytes_to_u32_digits(fe: &[u8]) -> [u32; 8] {
 }
 
 #[cfg(test)]
-mod test{
+mod test {
     use crate::utils::mul_quotient;
 
     #[test]
@@ -231,7 +231,8 @@ mod test{
         ];
 
         let res = mul_quotient(&a, &b, &n, &n_minus_one);
-        assert_eq!(res,
+        assert_eq!(
+            res,
             [
                 0xd13515aau32,
                 0x41757786u32,

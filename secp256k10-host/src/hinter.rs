@@ -1,9 +1,11 @@
-use crate::{bytes_to_u32_digits, N11, N12, N21, N22};
+use crate::{bytes_to_u32_digits, ENDO_COEFF, N11, N12, N21, N22};
 use crate::{MODULUS_N, MODULUS_Q};
 use ark_ff::{BigInteger, Field, LegendreSymbol, PrimeField, Zero};
 use ark_secp256k1::{Fq, Fr};
-use num_bigint::{BigInt, BigUint, ToBigInt};
-use secp256k10_guest::{ComputeHint, EvaluationResult, Hint};
+use num_bigint::{BigInt, BigUint, Sign, ToBigInt};
+use num_traits::sign::Signed;
+use secp256k10_guest::{ComputeHint, Hint};
+use std::ops::{MulAssign, Neg};
 use std::str::FromStr;
 
 pub struct HintBuilder {}
@@ -95,33 +97,29 @@ impl HintBuilder {
         let u1 = -(r_inv * z);
         let u2 = r_inv * s;
 
-        let n11 = N11.get_or_init(|| {
-            BigInt::from_str("64502973549206556628585045361533709077").unwrap()
-        });
-        let n12 = N12.get_or_init(|| {
-            BigInt::from_str("367917413016453100223835821029139468248").unwrap()
-        });
-        let n21 = N21.get_or_init(|| {
-            BigInt::from_str("303414439467246543595250775667605759171").unwrap()
-        });
-        let n22 = N22.get_or_init(|| {
-            BigInt::from_str("64502973549206556628585045361533709077").unwrap()
-        });
+        let n11 =
+            N11.get_or_init(|| BigInt::from_str("64502973549206556628585045361533709077").unwrap());
+        let n12 = N12
+            .get_or_init(|| BigInt::from_str("367917413016453100223835821029139468248").unwrap());
+        let n21 = N21
+            .get_or_init(|| BigInt::from_str("303414439467246543595250775667605759171").unwrap());
+        let n22 =
+            N22.get_or_init(|| BigInt::from_str("64502973549206556628585045361533709077").unwrap());
 
         let u1_bigint = BigUint::from(u1.into_bigint()).to_bigint().unwrap();
 
-        let beta_1: BigInt = (&u1_bigint) * n22 / &n.to_bigint();
-        let beta_2: BigInt = (&u1_bigint) * n12 / &n.to_bigint();
+        let beta_1: BigInt = (&u1_bigint) * n22 / &n.to_bigint().unwrap();
+        let beta_2: BigInt = (&u1_bigint) * n12 / &n.to_bigint().unwrap();
 
         let b11: BigInt = (&beta_1) * n11;
         let b12: BigInt = (&beta_2) * n21;
         let b1: BigInt = b11 + b12;
 
-        let b21: BigInt = (&beta_1) * &n12;
-        let b22: BigInt = (&beta_2) * &n22;
-        let b2: BigInt = b21 + b22;
+        let b21: BigInt = (&beta_1) * n12;
+        let b22: BigInt = (&beta_2) * n22;
+        let b2: BigInt = b21 - b22;
 
-        let k1 = &u1_bigint - b1;
+        let k1 = &u1_bigint - &b1;
         let k2 = -b2;
 
         let mut k1_abs = [0u32; 9];
@@ -150,62 +148,155 @@ impl HintBuilder {
         assert_eq!(k2_abs[6], 0);
         assert_eq!(k2_abs[7], 0);
 
-        let mut u1_b1_sum = None;
-        let mut u1_b2_sum = None;
+        let mut u1_k1_sum = (
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&secp256k10_guest::G_BASE.0)),
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&secp256k10_guest::G_BASE.1)),
+        );
+        let mut u1_k2_sum = (
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&secp256k10_guest::G_BASE.0)),
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&secp256k10_guest::G_BASE.1)),
+        );
         let mut hints = Vec::<[u32; 8]>::new();
 
         for i in 0..4 {
             for j in 0..8 {
                 let bits = (k1_abs[i] >> (j * 4)) & 0xF;
-                if bits == 0 {
+                if bits == 8 {
                     continue;
-                } else {
-                    let (x2, y2) = secp256k10_guest::G_TABLES[i * 8 + j][(bits - 1) as usize];
-
-                    let x2 = Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&x2));
-                    let y2 = Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&y2));
-
-                    if u1_b1_sum.is_none() {
-                        u1_b1_sum = Some((x2, y2));
-                    } else {
-                        let (x1, y1) = u1_b1_sum.as_ref().unwrap();
-
-                        let slope = (y1 - &y2) * (x1 - &x2).inverse().unwrap();
-                        hints.push(bytes_to_u32_digits(&slope.into_bigint().to_bytes_le()));
-
-                        let x3 = slope.square() - x1 - x2;
-                        let y3 = slope * &(x1 - &x3) - y1;
-                        u1_b1_sum = Some((x3, y3));
-                    }
                 }
+
+                let is_neg = (bits & 0x8) == 0;
+
+                let loc = if is_neg {
+                    7 - bits & 0x7
+                } else {
+                    // note that bits != 8
+                    (bits & 0x7) - 1
+                };
+
+                let (x2, y2) = secp256k10_guest::G_TABLES[i * 7 + j][loc as usize];
+
+                let x2 = Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&x2));
+                let mut y2 = Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&y2));
+
+                if is_neg {
+                    y2.neg_in_place();
+                }
+
+                let (x1, y1) = &u1_k1_sum;
+
+                let slope = (y1 - &y2) * (x1 - &x2).inverse().unwrap();
+                hints.push(bytes_to_u32_digits(&slope.into_bigint().to_bytes_le()));
+
+                let x3 = slope.square() - x1 - x2;
+                let y3 = slope * &(x1 - &x3) - y1;
+
+                u1_k1_sum = (x3, y3);
             }
         }
 
-        if k1_abs[4] == 0 {
+        if k1_abs[4] == 1 {
+            let (x2, y2) = secp256k10_guest::G_LAST_ENTRY;
 
+            let x2 = Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&x2));
+            let y2 = Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&y2));
+
+            let (x1, y1) = &u1_k1_sum;
+
+            let slope = (y1 - &y2) * (x1 - &x2).inverse().unwrap();
+            hints.push(bytes_to_u32_digits(&slope.into_bigint().to_bytes_le()));
+
+            let x3 = slope.square() - x1 - x2;
+            let y3 = slope * &(x1 - &x3) - y1;
+
+            u1_k1_sum = (x3, y3);
         }
 
-        for (i, bit) in k1_bits.iter().enumerate() {
-            if *bit {
-                let (x2, y2) = secp256k10_guest::G_TABLES[i];
+        if k1.sign() == Sign::Minus {
+            u1_k1_sum.1.neg_in_place();
+        }
+
+        for i in 0..4 {
+            for j in 0..8 {
+                let bits = (k2_abs[i] >> (j * 4)) & 0xF;
+                if bits == 8 {
+                    continue;
+                }
+
+                let is_neg = (bits & 0x8) == 0;
+
+                let loc = if is_neg {
+                    7 - bits & 0x7
+                } else {
+                    // note that bits != 8
+                    (bits & 0x7) - 1
+                };
+
+                let (x2, y2) = secp256k10_guest::G_TABLES[i * 7 + j][loc as usize];
 
                 let x2 = Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&x2));
-                let y2 = Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&y2));
+                let mut y2 = Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&y2));
 
-                if u1_sum.is_none() {
-                    u1_sum = Some((x2, y2));
+                if is_neg {
+                    y2.neg_in_place();
+                }
+
+                let (x1, y1) = &u1_k2_sum;
+
+                let slope = (y1 - &y2) * (x1 - &x2).inverse().unwrap();
+                hints.push(bytes_to_u32_digits(&slope.into_bigint().to_bytes_le()));
+
+                let x3 = slope.square() - x1 - x2;
+                let y3 = slope * &(x1 - &x3) - y1;
+                u1_k2_sum = (x3, y3);
+            }
+        }
+
+        let endo_coeff = ENDO_COEFF.get_or_init(|| {
+            Fq::from_str(
+                "60197513588986302554485582024885075108884032450952339817679072026166228089408",
+            )
+            .unwrap()
+        });
+
+        u1_k2_sum.0.mul_assign(endo_coeff);
+        if k2.sign() == Sign::Minus {
+            u1_k2_sum.1.neg_in_place();
+        }
+
+        let u1_sum = match (u1_k1_sum, u1_k2_sum) {
+            ((x1, y1), (x2, y2)) => {
+                if x1 == x2 {
+                    if y1 == y2 {
+                        let x1_sqr = x1.square();
+                        let y1_dbl = y1.double();
+
+                        let slope = (x1_sqr.double() + x1_sqr) * y1_dbl.inverse().unwrap();
+                        hints.push(bytes_to_u32_digits(&slope.into_bigint().to_bytes_le()));
+
+                        let x3 = slope.square() - x1 - x1;
+                        let y3 = slope * &(x1 - &x3) - y1;
+
+                        (x3, y3)
+                    } else {
+                        unreachable!()
+                    }
                 } else {
-                    let (x1, y1) = u1_sum.as_ref().unwrap();
-
                     let slope = (y1 - &y2) * (x1 - &x2).inverse().unwrap();
                     hints.push(bytes_to_u32_digits(&slope.into_bigint().to_bytes_le()));
 
                     let x3 = slope.square() - x1 - x2;
                     let y3 = slope * &(x1 - &x3) - y1;
-                    u1_sum = Some((x3, y3));
+                    (x3, y3)
                 }
             }
-        }
+            (Some(u1_k1_sum), None) => u1_k1_sum,
+            (None, Some(u1_k2_sum)) => u1_k2_sum,
+            (None, None) => {
+                // only possible when z is zero, which would not happen with non-negligible probability
+                unreachable!()
+            }
+        };
 
         // The implementation as follows relies on an observation about secp256k1
         // The doubling algorithm would fail if y = 0.
@@ -260,7 +351,7 @@ impl HintBuilder {
         // In that case, if the y coordinate is the same, then we double it
         // Otherwise, return an error
         match (u1_sum, u2_sum) {
-            (Some((u1x, u1y)), Some((u2x, u2y))) => {
+            ((u1x, u1y), Some((u2x, u2y))) => {
                 if u1x == u2x {
                     if u1y != u2y {
                         let compute_hints = ComputeHint {

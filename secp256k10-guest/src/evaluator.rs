@@ -295,7 +295,7 @@ impl<'a> Evaluator<'a> {
             0x53cbcb16u32,
             0x919bb861u32,
             0x9a83f8efu32,
-            0x851695d4u32
+            0x851695d4u32,
         ];
 
         let n11 = [
@@ -320,7 +320,7 @@ impl<'a> Evaluator<'a> {
             0u32,
         ];
 
-        let n21_neg = [
+        let n21 = [
             0x0abfe4c3u32,
             0x6f547fa9u32,
             0x010e8828u32,
@@ -328,7 +328,7 @@ impl<'a> Evaluator<'a> {
             0u32,
             0u32,
             0u32,
-            0u32
+            0u32,
         ];
 
         let n22 = [
@@ -339,7 +339,7 @@ impl<'a> Evaluator<'a> {
             0u32,
             0u32,
             0u32,
-            0u32
+            0u32,
         ];
 
         let beta_1 = mul_quotient(&u1, &n22, &n, &n_minus_one);
@@ -357,67 +357,63 @@ impl<'a> Evaluator<'a> {
         ];
 
         let b11 = mul_mod(&beta_1, &n11, &u256_bound);
-        let b12_neg = mul_mod(&beta_2, &n21_neg, &u256_bound);
+        let b12 = mul_mod(&beta_2, &n21, &u256_bound);
 
         let b21 = mul_mod(&beta_1, &n12, &u256_bound);
-        let b22 = mul_mod(&beta_2, &n22, &u256_bound);
+        let b22_neg = mul_mod(&beta_2, &n22, &u256_bound);
 
-        let mut b12_neg_larger_than_b11 = false;
+        let mut b1 = b11.clone();
+        let carry = add(&mut b1, &b12);
+        assert_eq!(carry, 0);
+
+        let mut b22_neg_larger_than_b21 = false;
         for i in 0..8 {
-            if b12_neg[7 - i] > b11[7 - i] {
-                b12_neg_larger_than_b11 = true;
+            if b22_neg[7 - i] > b21[7 - i] {
+                b22_neg_larger_than_b21 = true;
                 break;
             }
         }
 
-        let b1_is_negative = b12_neg_larger_than_b11;
-        let mut b1 ;
-        if b12_neg_larger_than_b11 {
-            b1 = b12_neg.clone();
-            let borrow = sub_and_borrow(&mut b1, &b11);
+        let b2;
+        let b2_is_negative;
+        if b22_neg_larger_than_b21 {
+            b2 = b22_neg.clone();
+            let borrow = sub_and_borrow(&mut b1, &b21);
             assert_eq!(borrow, 0);
+            b2_is_negative = true;
         } else {
-            b1 = b11.clone();
-            let borrow = sub_and_borrow(&mut b1, &b12_neg);
+            b2 = b21.clone();
+            let borrow = sub_and_borrow(&mut b1, &b22_neg);
             assert_eq!(borrow, 0);
+            b2_is_negative = false;
         }
 
-        let mut b2 = b21.clone();
-        let carry = add(&mut b2, &b22);
-        assert_eq!(carry, 0);
-
-        let k2_neg = &b2;
+        let k2_is_negative = !b2_is_negative;
+        let k2_abs = &b2;
 
         // by ceiling instead of rounding, the error would be larger.
         // |v1| + |v2| can only guarantee that the maximal values would be at most 129 bits.
 
-        let mut k1 = [0u32; 9];
+        let mut k1_abs = [0u32; 8];
         let k1_is_negative;
-        if b1_is_negative {
-            k1[0..8].copy_from_slice(&u1[0..8]);
-            let carry = add::<9, 8>(&mut k1, &b1);
-            assert_eq!(carry, 0);
+        let mut u1_larger_than_b1 = false;
+        for i in 0..8 {
+            if u1[7 - i] > b1[7 - i] {
+                u1_larger_than_b1 = true;
+                break;
+            }
+        }
+
+        if u1_larger_than_b1 {
+            k1_abs[0..8].copy_from_slice(&u1[0..8]);
+            let borrow = sub_and_borrow::<8, 8>(&mut k1_abs, &b1);
+            assert_eq!(borrow, 0);
             k1_is_negative = false;
         } else {
-            let mut u1_larger_than_b1 = false;
-            for i in 0..8 {
-                if u1[7 - i] > b1[7 - i] {
-                    u1_larger_than_b1 = true;
-                    break;
-                }
-            }
-
-            if u1_larger_than_b1 {
-                k1[0..8].copy_from_slice(&u1[0..8]);
-                let borrow = sub_and_borrow::<9, 8>(&mut k1, &b1);
-                assert_eq!(borrow, 0);
-                k1_is_negative = false;
-            } else {
-                k1[0..8].copy_from_slice(&b1[0..8]);
-                let borrow = sub_and_borrow::<9, 8>(&mut k1, &u1);
-                assert_eq!(borrow, 0);
-                k1_is_negative = true;
-            }
+            k1_abs[0..8].copy_from_slice(&b1[0..8]);
+            let borrow = sub_and_borrow::<8, 8>(&mut k1_abs, &u1);
+            assert_eq!(borrow, 0);
+            k1_is_negative = true;
         }
 
         let overflow = [0x000003d1u32, 0x1u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];
@@ -547,16 +543,15 @@ impl<'a> Evaluator<'a> {
             Ok((x3, y3))
         };
 
-        assert!(k1[4] == 1 || k1[4] == 0);
-        assert_eq!(k1[5], 0);
-        assert_eq!(k1[6], 0);
-        assert_eq!(k1[7], 0);
-        assert_eq!(k1[8], 0);
+        assert!(k1_abs[4] == 1 || k1_abs[4] == 0);
+        assert_eq!(k1_abs[5], 0);
+        assert_eq!(k1_abs[6], 0);
+        assert_eq!(k1_abs[7], 0);
 
-        assert_eq!(k2_neg[4], 0);
-        assert_eq!(k2_neg[5], 0);
-        assert_eq!(k2_neg[6], 0);
-        assert_eq!(k2_neg[7], 0);
+        assert_eq!(k2_abs[4], 0);
+        assert_eq!(k2_abs[5], 0);
+        assert_eq!(k2_abs[6], 0);
+        assert_eq!(k2_abs[7], 0);
 
         stop_start_timer!("compute u1 * G");
 
@@ -564,11 +559,11 @@ impl<'a> Evaluator<'a> {
         // handle the lower 128 bits first and consider the highest bit a special case
         for i in 0..4 {
             for j in 0..8 {
-                let bits = (k1[i] >> (j * 4)) & 0xF;
+                let bits = (k1_abs[i] >> (j * 4)) & 0xF;
                 if bits == 0 {
                     continue;
                 } else {
-                    let (x2, y2) = crate::G_TABLES[i * 8 + j][(bits - 1) as usize];
+                    let (x2, y2) = crate::G_TABLES[i * 7 + j][(bits - 1) as usize];
 
                     if u1_k1_sum.is_none() {
                         u1_k1_sum = Some((x2, y2));
@@ -585,7 +580,7 @@ impl<'a> Evaluator<'a> {
             }
         }
 
-        if k1[4] == 1 {
+        if k1_abs[4] == 1 {
             let (x2, y2) = crate::G_LAST_ENTRY;
 
             if u1_k1_sum.is_none() {
@@ -612,11 +607,11 @@ impl<'a> Evaluator<'a> {
         let mut u1_k2_sum = None;
         for i in 0..4 {
             for j in 0..8 {
-                let bits = (k2_neg[i] >> (j * 4)) & 0xF;
+                let bits = (k2_abs[i] >> (j * 4)) & 0xF;
                 if bits == 0 {
                     continue;
                 } else {
-                    let (x2, y2) = crate::G_TABLES[i * 8 + j][(bits - 1) as usize];
+                    let (x2, y2) = crate::G_TABLES[i * 7 + j][(bits - 1) as usize];
 
                     if u1_k2_sum.is_none() {
                         u1_k2_sum = Some((x2, y2));
@@ -636,7 +631,11 @@ impl<'a> Evaluator<'a> {
         if !u1_k2_sum.is_none() {
             let (x1, y1) = u1_k2_sum.as_ref().unwrap();
             let x1_new = mul_mod(x1, &endo_coeff, &n);
-            let y1_new = mul_mod(y1, &n_minus_one, &n);
+            let y1_new = if k2_is_negative {
+                mul_mod(y1, &n_minus_one, &n)
+            } else {
+                y1.clone()
+            };
             u1_k2_sum = Some((x1_new, y1_new));
         }
 
@@ -656,18 +655,30 @@ impl<'a> Evaluator<'a> {
                             y_is_the_same = false;
                         }
                     }
+
+                    // this would not be very likely to happen
+                    if x_is_the_same && y_is_the_same {
+                        point_double(&u1_k1_sum.0, &u1_k1_sum.1, &mut hint_counter).unwrap()
+                    } else {
+                        // only possible when z is zero, which would not happen with non-negligible probability
+                        unreachable!()
+                    }
                 } else {
-                     
+                    point_add(
+                        &u1_k1_sum.0,
+                        &u1_k1_sum.1,
+                        &u1_k2_sum.0,
+                        &u1_k2_sum.1,
+                        &mut hint_counter,
+                    )
+                    .unwrap()
                 }
             }
-            (Some(u1_k1_sum), None) => {
-
-            }
-            (None, Some(u2_k2_sum)) => {
-
-            }
+            (Some(u1_k1_sum), None) => u1_k1_sum,
+            (None, Some(u2_k2_sum)) => u2_k2_sum,
             (None, None) => {
-                None
+                // only possible when z is zero, which would not happen with non-negligible probability
+                unreachable!()
             }
         };
 
@@ -712,7 +723,7 @@ impl<'a> Evaluator<'a> {
         stop_timer!();
 
         match (u1_sum, u2_sum) {
-            (Some((u1x, u1y)), Some((u2x, u2y))) => {
+            ((u1x, u1y), Some((u2x, u2y))) => {
                 if u1x == u2x {
                     if u1y != u2y {
                         return EvaluationResult::Err(

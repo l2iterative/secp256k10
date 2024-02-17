@@ -1,6 +1,6 @@
+use ark_secp256k1::Fq;
 use num_bigint::{BigInt, BigUint};
 use std::sync::OnceLock;
-use ark_ff::BigInteger;
 
 static MODULUS_Q: OnceLock<BigUint> = OnceLock::new();
 static MODULUS_N: OnceLock<BigUint> = OnceLock::new();
@@ -8,6 +8,7 @@ static N11: OnceLock<BigInt> = OnceLock::new();
 static N12: OnceLock<BigInt> = OnceLock::new();
 static N21: OnceLock<BigInt> = OnceLock::new();
 static N22: OnceLock<BigInt> = OnceLock::new();
+static ENDO_COEFF: OnceLock<Fq> = OnceLock::new();
 
 mod table_generation;
 pub use table_generation::TableGeneration;
