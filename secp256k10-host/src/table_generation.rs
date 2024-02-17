@@ -1,11 +1,10 @@
 use ark_ec::{AffineRepr, CurveGroup, Group};
 use ark_ff::{BigInteger, PrimeField, UniformRand};
-use ark_secp256k1::Affine;
-use std::ops::Add;
-use std::str::FromStr;
-use num_bigint::BigInt;
+use ark_secp256k1::{Affine, Fr};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use std::ops::{Add, Mul, Neg};
+use std::str::FromStr;
 
 pub struct TableGeneration {
     pub g_series: [[([u32; 8], [u32; 8]); 8]; 32],
@@ -116,22 +115,40 @@ impl TableGeneration {
 
         let mut prng = ChaCha20Rng::seed_from_u64(0u64);
         let affine_protector2 = Affine::rand(&mut prng);
-        let affine_protector1 = affine_protector2.mul_bigint(
-            BigInt::from_str()
-        );
+        let affine_protector1 = affine_protector2
+            .mul(
+                Fr::from_str(
+                    "78074008874160198520644763525212887401909906723592317393988542598630163514318",
+                )
+                .unwrap(),
+            )
+            .neg()
+            .into_affine();
 
-        let mut g_base = ([0u32; 8], [0u32; 8]);
-        g_base.0.copy_from_slice(&bytemuck::cast_slice(
-            &base.x().unwrap().into_bigint().to_bytes_le(),
+        let base_1 = affine_protector1.add(&base).into_affine();
+        let base_2 = affine_protector2.add(&base).into_affine();
+
+        let mut g_base_1 = ([0u32; 8], [0u32; 8]);
+        g_base_1.0.copy_from_slice(&bytemuck::cast_slice(
+            &base_1.x().unwrap().into_bigint().to_bytes_le(),
         ));
-        g_base.1.copy_from_slice(&bytemuck::cast_slice(
-            &base.y().unwrap().into_bigint().to_bytes_le(),
+        g_base_1.1.copy_from_slice(&bytemuck::cast_slice(
+            &base_1.y().unwrap().into_bigint().to_bytes_le(),
+        ));
+
+        let mut g_base_2 = ([0u32; 8], [0u32; 8]);
+        g_base_2.0.copy_from_slice(&bytemuck::cast_slice(
+            &base_2.x().unwrap().into_bigint().to_bytes_le(),
+        ));
+        g_base_2.1.copy_from_slice(&bytemuck::cast_slice(
+            &base_2.y().unwrap().into_bigint().to_bytes_le(),
         ));
 
         Self {
             g_series: res,
             g_last_one,
-            g_base,
+            g_base_1,
+            g_base_2,
         }
     }
 
@@ -173,14 +190,26 @@ impl TableGeneration {
 
         println!();
 
-        println!("Base entry:");
+        println!("Base entry 1:");
         println!("([");
-        for v in self.g_base.0.iter() {
+        for v in self.g_base_1.0.iter() {
             print!("{}u32,", v);
         }
         print!("],");
         print!("[");
-        for v in self.g_base.1.iter() {
+        for v in self.g_base_1.1.iter() {
+            print!("{}u32,", v);
+        }
+        println!("])");
+
+        println!("Base entry 2:");
+        println!("([");
+        for v in self.g_base_2.0.iter() {
+            print!("{}u32,", v);
+        }
+        print!("],");
+        print!("[");
+        for v in self.g_base_2.1.iter() {
             print!("{}u32,", v);
         }
         println!("])");
@@ -194,6 +223,7 @@ mod test {
     use ark_ff::{BigInteger, Field, PrimeField};
     use ark_secp256k1::{Affine, Fq, Fr};
     use std::ops::{AddAssign, Mul};
+    use std::str::FromStr;
 
     #[test]
     fn check_consistency() {
@@ -245,15 +275,38 @@ mod test {
             tmp_bigint.muln(i * 4);
             r.add_assign(Fr::from_bigint(tmp_bigint).unwrap());
         }
-        let point_r = Affine::generator().mul(&r).into_affine();
+        let mut point_test = Affine::generator().mul(&r).into_affine();
 
-        let x = point_r.x;
-        let y = point_r.y;
+        let lambda_plus_one = Fr::from_str(
+            "78074008874160198520644763525212887401909906723592317393988542598630163514319",
+        )
+        .unwrap();
+        let lambda = Fr::from_str(
+            "78074008874160198520644763525212887401909906723592317393988542598630163514318",
+        )
+        .unwrap();
 
-        let x_reconstructed =
-            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base.0));
-        let y_reconstructed =
-            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base.1));
+        point_test = point_test.into_group().mul(&lambda_plus_one).into_affine();
+
+        let x = point_test.x;
+        let y = point_test.y;
+
+        let base_1_x =
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base_1.0));
+        let base_1_y =
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base_1.1));
+
+        let base_2_x =
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base_2.0));
+        let base_2_y =
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base_2.1));
+
+        let base_1 = Affine::new(base_1_x, base_1_y);
+        let base_2 = Affine::new(base_2_x, base_2_y);
+
+        let point_test_reconstructed = (base_1 + base_2.mul(&lambda).into_affine()).into_affine();
+        let x_reconstructed = point_test_reconstructed.x;
+        let y_reconstructed = point_test_reconstructed.y;
 
         assert_eq!(x, x_reconstructed);
         assert_eq!(y, y_reconstructed);

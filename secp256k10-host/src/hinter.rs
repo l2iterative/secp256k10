@@ -5,7 +5,7 @@ use ark_secp256k1::{Fq, Fr};
 use num_bigint::{BigInt, BigUint, Sign, ToBigInt};
 use num_traits::sign::Signed;
 use secp256k10_guest::{ComputeHint, Hint};
-use std::ops::{MulAssign, Neg};
+use std::ops::MulAssign;
 use std::str::FromStr;
 
 pub struct HintBuilder {}
@@ -289,12 +289,6 @@ impl HintBuilder {
                     let y3 = slope * &(x1 - &x3) - y1;
                     (x3, y3)
                 }
-            }
-            (Some(u1_k1_sum), None) => u1_k1_sum,
-            (None, Some(u1_k2_sum)) => u1_k2_sum,
-            (None, None) => {
-                // only possible when z is zero, which would not happen with non-negligible probability
-                unreachable!()
             }
         };
 
