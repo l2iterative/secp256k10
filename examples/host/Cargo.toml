@@ -13,4 +13,4 @@ rand = "0.8.5"
 risc0-zkvm = { version = "0.20.1", features = ["prove"] }
 serde = { version = "1.0.196", features = ["derive"] }
 l2r0-small-serde = "0.20.1"
-l2r0-profiler-host = { version = "0.21.0" }
+l2r0-profiler-host = { version = "0.20.1" }

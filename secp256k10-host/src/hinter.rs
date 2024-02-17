@@ -1,9 +1,9 @@
-use crate::bytes_to_u32_digits;
+use crate::{bytes_to_u32_digits, N11, N12, N21, N22};
 use crate::{MODULUS_N, MODULUS_Q};
 use ark_ff::{BigInteger, Field, LegendreSymbol, PrimeField, Zero};
 use ark_secp256k1::{Fq, Fr};
-use num_bigint::BigUint;
-use secp256k10_guest::{ComputeHint, Hint};
+use num_bigint::{BigInt, BigUint, ToBigInt};
+use secp256k10_guest::{ComputeHint, EvaluationResult, Hint};
 use std::str::FromStr;
 
 pub struct HintBuilder {}
@@ -95,11 +95,97 @@ impl HintBuilder {
         let u1 = -(r_inv * z);
         let u2 = r_inv * s;
 
-        let mut u1_sum = None;
+        let n11 = N11.get_or_init(|| {
+            BigInt::from_str("64502973549206556628585045361533709077").unwrap()
+        });
+        let n12 = N12.get_or_init(|| {
+            BigInt::from_str("367917413016453100223835821029139468248").unwrap()
+        });
+        let n21 = N21.get_or_init(|| {
+            BigInt::from_str("303414439467246543595250775667605759171").unwrap()
+        });
+        let n22 = N22.get_or_init(|| {
+            BigInt::from_str("64502973549206556628585045361533709077").unwrap()
+        });
+
+        let u1_bigint = BigUint::from(u1.into_bigint()).to_bigint().unwrap();
+
+        let beta_1: BigInt = (&u1_bigint) * n22 / &n.to_bigint();
+        let beta_2: BigInt = (&u1_bigint) * n12 / &n.to_bigint();
+
+        let b11: BigInt = (&beta_1) * n11;
+        let b12: BigInt = (&beta_2) * n21;
+        let b1: BigInt = b11 + b12;
+
+        let b21: BigInt = (&beta_1) * &n12;
+        let b22: BigInt = (&beta_2) * &n22;
+        let b2: BigInt = b21 + b22;
+
+        let k1 = &u1_bigint - b1;
+        let k2 = -b2;
+
+        let mut k1_abs = [0u32; 9];
+        let mut k2_abs = [0u32; 8];
+
+        {
+            let v = k1.abs().to_biguint().unwrap().to_u32_digits();
+            for i in 0..v.len() {
+                k1_abs[i] = v[i];
+            }
+
+            let v = k2.abs().to_biguint().unwrap().to_u32_digits();
+            for i in 0..v.len() {
+                k2_abs[i] = v[i];
+            }
+        }
+
+        assert!(k1_abs[4] == 1 || k1_abs[4] == 0);
+        assert_eq!(k1_abs[5], 0);
+        assert_eq!(k1_abs[6], 0);
+        assert_eq!(k1_abs[7], 0);
+        assert_eq!(k1_abs[8], 0);
+
+        assert_eq!(k2_abs[4], 0);
+        assert_eq!(k2_abs[5], 0);
+        assert_eq!(k2_abs[6], 0);
+        assert_eq!(k2_abs[7], 0);
+
+        let mut u1_b1_sum = None;
+        let mut u1_b2_sum = None;
         let mut hints = Vec::<[u32; 8]>::new();
 
-        let u1_bits = u1.into_bigint().to_bits_le();
-        for (i, bit) in u1_bits.iter().enumerate() {
+        for i in 0..4 {
+            for j in 0..8 {
+                let bits = (k1_abs[i] >> (j * 4)) & 0xF;
+                if bits == 0 {
+                    continue;
+                } else {
+                    let (x2, y2) = secp256k10_guest::G_TABLES[i * 8 + j][(bits - 1) as usize];
+
+                    let x2 = Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&x2));
+                    let y2 = Fq::from_le_bytes_mod_order(&bytemuck::cast_slice(&y2));
+
+                    if u1_b1_sum.is_none() {
+                        u1_b1_sum = Some((x2, y2));
+                    } else {
+                        let (x1, y1) = u1_b1_sum.as_ref().unwrap();
+
+                        let slope = (y1 - &y2) * (x1 - &x2).inverse().unwrap();
+                        hints.push(bytes_to_u32_digits(&slope.into_bigint().to_bytes_le()));
+
+                        let x3 = slope.square() - x1 - x2;
+                        let y3 = slope * &(x1 - &x3) - y1;
+                        u1_b1_sum = Some((x3, y3));
+                    }
+                }
+            }
+        }
+
+        if k1_abs[4] == 0 {
+
+        }
+
+        for (i, bit) in k1_bits.iter().enumerate() {
             if *bit {
                 let (x2, y2) = secp256k10_guest::G_TABLES[i];
 

@@ -7,7 +7,7 @@ edition = "2021"
 [dependencies]
 serde = { version = "1.0.196", features = ["derive"] }
 bytemuck = "1.14.3"
-l2r0-profiler-guest = "0.21.0"
+l2r0-profiler-guest = "0.20.1"
 
 [target.'cfg(not(target_os = "zkvm"))'.dependencies]
 num-bigint = "0.4.4"

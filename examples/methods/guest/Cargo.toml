@@ -10,7 +10,7 @@ risc0-zkvm = { version = "0.20.1", default-features = false, features = [ "std" 
 secp256k10-guest = { path = "../../../secp256k10-guest" }
 serde = { version = "1.0.196", features = ["derive"] }
 l2r0-small-serde = "0.20.1"
-l2r0-profiler-guest = "0.21.0"
+l2r0-profiler-guest = "0.20.1"
 
 [features]
 default = ["print-trace"]

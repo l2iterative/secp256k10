@@ -5,6 +5,7 @@ use std::ops::Add;
 
 pub struct TableGeneration {
     pub g_series: [[([u32; 8], [u32; 8]); 7]; 32],
+    pub g_last_one: ([u32; 8], [u32; 8])
 }
 
 impl TableGeneration {
@@ -80,10 +81,25 @@ impl TableGeneration {
             ));
         }
 
-        Self { g_series: res }
+        cur = cur
+            .into_group()
+            .double()
+            .double()
+            .double()
+            .double()
+            .into_affine();
+
+
+        let mut g_last_one = ([0u32; 8], [0u32; 8]);
+        g_last_one.0.copy_from_slice(&bytemuck::cast_slice(&cur.x().unwrap().into_bigint().to_bytes_le()));
+        g_last_one.1.copy_from_slice(&bytemuck::cast_slice(&cur.y().unwrap().into_bigint().to_bytes_le()));
+
+        Self { g_series: res, g_last_one }
     }
 
     pub fn print(&self) {
+        println!("Main table:");
+
         print!("[");
         for i in 0..32 {
             println!("[");
@@ -102,6 +118,20 @@ impl TableGeneration {
             println!("],");
         }
         print!("]");
+
+        println!();
+
+        println!("Last entry:");
+        println!("([");
+        for v in self.g_last_one.0.iter() {
+            print!("{}u32,", v);
+        }
+        print!("],");
+        print!("[");
+        for v in self.g_last_one.1.iter() {
+            print!("{}u32,", v);
+        }
+        println!("])");
     }
 }
 
@@ -140,5 +170,23 @@ mod test {
                 assert_eq!(y, y_reconstructed);
             }
         }
+
+        let mut r_bigint = Fr::from(2 as u8).into_bigint();
+        r_bigint.muln(129);
+        let r = Fr::from_bigint(r_bigint).unwrap();
+        let point_r = Affine::generator().mul(&r).into_affine();
+
+        let x = point_r.x;
+        let y = point_r.y;
+
+        let x_reconstructed = Fq::from_le_bytes_mod_order(
+            &bytemuck::cast_slice::<u32, u8>(&hint.g_last_one.0),
+        );
+        let y_reconstructed = Fq::from_le_bytes_mod_order(
+            &bytemuck::cast_slice::<u32, u8>(&hint.g_last_one.1),
+        );
+
+        assert_eq!(x, x_reconstructed);
+        assert_eq!(y, y_reconstructed);
     }
 }

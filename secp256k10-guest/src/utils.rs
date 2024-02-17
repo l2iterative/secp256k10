@@ -41,15 +41,17 @@ pub fn sub_with_borrow(a: u32, b: u32, carry: u32) -> (u32, u32) {
 }
 
 #[inline]
-pub fn sub_and_borrow<const I: usize>(accu: &mut [u32; I], new: &[u32; I]) -> u32 {
+pub fn sub_and_borrow<const I: usize, const J: usize>(accu: &mut [u32; I], new: &[u32; J]) -> u32 {
     let (cur, borrow) = accu[0].overflowing_sub(new[0]);
     accu[0] = cur;
 
     let mut borrow = borrow as u32;
-    for i in 1..I - 1 {
+    for i in 1..J {
         (accu[i], borrow) = sub_with_borrow(accu[i], new[i], borrow);
     }
-    (accu[I - 1], borrow) = sub_with_borrow(accu[I - 1], new[I - 1], borrow);
+    for i in J..I {
+        (accu[i], borrow) = sub_with_borrow(accu[i], borrow, 0);
+    }
     borrow
 }
 

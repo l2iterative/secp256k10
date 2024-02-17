@@ -4992,3 +4992,5 @@ pub static G_TABLES: [[([u32; 8], [u32; 8]); 7]; 32] = [
         ),
     ],
 ];
+
+pub static G_LAST_ENTRY: ([u32; 8], [u32; 8]) = ([0u32; 8], [0u32; 8]);
