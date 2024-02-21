@@ -143,6 +143,8 @@ pub fn mul_quotient(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8], n_minus_one: &[u32
         if r[7 - i] > r_prime[7 - i] {
             r_greater_than_r_prime = true;
             break;
+        } else if r[7 - i] < r_prime[7 - i] {
+            break;
         }
     }
 
@@ -169,7 +171,7 @@ pub fn mul_quotient(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8], n_minus_one: &[u32
         let borrow = sub_and_borrow(&mut r_prime, &r);
         assert!(borrow == 0);
 
-        return r;
+        return r_prime;
     }
 }
 

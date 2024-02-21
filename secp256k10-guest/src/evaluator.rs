@@ -371,19 +371,21 @@ impl<'a> Evaluator<'a> {
             if b22_neg[7 - i] > b21[7 - i] {
                 b22_neg_larger_than_b21 = true;
                 break;
+            } else if b22_neg[7 - i] < b21[7 - i] {
+                break;
             }
         }
 
-        let b2;
+        let mut b2;
         let b2_is_negative;
         if b22_neg_larger_than_b21 {
             b2 = b22_neg.clone();
-            let borrow = sub_and_borrow(&mut b1, &b21);
+            let borrow = sub_and_borrow(&mut b2, &b21);
             assert_eq!(borrow, 0);
             b2_is_negative = true;
         } else {
             b2 = b21.clone();
-            let borrow = sub_and_borrow(&mut b1, &b22_neg);
+            let borrow = sub_and_borrow(&mut b2, &b22_neg);
             assert_eq!(borrow, 0);
             b2_is_negative = false;
         }
@@ -400,6 +402,8 @@ impl<'a> Evaluator<'a> {
         for i in 0..8 {
             if u1[7 - i] > b1[7 - i] {
                 u1_larger_than_b1 = true;
+                break;
+            } else if u1[7 - i] < b1[7 - i] {
                 break;
             }
         }
@@ -505,6 +509,7 @@ impl<'a> Evaluator<'a> {
 
             for i in 0..8 {
                 if should_be_y1[i] != y1[i] {
+                    println!("slope is wrong");
                     return Err(EvaluationError::WrongHint);
                 }
             }
@@ -548,34 +553,50 @@ impl<'a> Evaluator<'a> {
         assert_eq!(k1_abs[6], 0);
         assert_eq!(k1_abs[7], 0);
 
-        assert_eq!(k2_abs[4], 0);
+        assert!(k2_abs[4] == 1 || k2_abs[4] == 0);
         assert_eq!(k2_abs[5], 0);
         assert_eq!(k2_abs[6], 0);
         assert_eq!(k2_abs[7], 0);
 
         stop_start_timer!("compute u1 * G");
 
-        let mut u1_k1_sum = None;
+        let mut u1_k1_sum = crate::G_BASE_1;
         // handle the lower 128 bits first and consider the highest bit a special case
         for i in 0..4 {
             for j in 0..8 {
                 let bits = (k1_abs[i] >> (j * 4)) & 0xF;
-                if bits == 0 {
+                if bits == 8 {
                     continue;
-                } else {
-                    let (x2, y2) = crate::G_TABLES[i * 7 + j][(bits - 1) as usize];
+                }
 
-                    if u1_k1_sum.is_none() {
-                        u1_k1_sum = Some((x2, y2));
-                    } else {
-                        let (x1, y1) = u1_k1_sum.as_ref().unwrap();
-                        let res = point_add(x1, y1, &x2, &y2, &mut hint_counter);
-                        if res.is_ok() {
-                            u1_k1_sum = Some(res.unwrap());
-                        } else {
-                            return EvaluationResult::Err(res.unwrap_err());
-                        }
-                    }
+                let is_neg = (bits & 0x8) == 0;
+
+                let loc = if is_neg {
+                    7 - bits & 0x7
+                } else {
+                    // note that bits != 8
+                    (bits & 0x7) - 1
+                };
+
+                let (x2, mut y2) = crate::G_TABLES[i * 8 + j][loc as usize];
+
+                if is_neg {
+                    y2 = mul_mod(&y2, &q_minus_one, &q);
+                }
+
+                let (x1, y1) = &u1_k1_sum;
+                /*println!("{} {} {} {} {} {}",
+                    i, j,
+                    BigUint::from_slice(x1),
+                         BigUint::from_slice(y1),
+                         BigUint::from_slice(&x2),
+                         BigUint::from_slice(&y2),
+                );*/
+                let res = point_add(x1, y1, &x2, &y2, &mut hint_counter);
+                if res.is_ok() {
+                    u1_k1_sum = res.unwrap();
+                } else {
+                    return EvaluationResult::Err(res.unwrap_err());
                 }
             }
         }
@@ -583,102 +604,108 @@ impl<'a> Evaluator<'a> {
         if k1_abs[4] == 1 {
             let (x2, y2) = crate::G_LAST_ENTRY;
 
-            if u1_k1_sum.is_none() {
-                u1_k1_sum = Some((x2, y2));
+            let (x1, y1) = &u1_k1_sum;
+            let res = point_add(x1, y1, &x2, &y2, &mut hint_counter);
+            if res.is_ok() {
+                u1_k1_sum = res.unwrap();
             } else {
-                let (x1, y1) = u1_k1_sum.as_ref().unwrap();
+                return EvaluationResult::Err(res.unwrap_err());
+            }
+        }
+
+        if k1_is_negative {
+            u1_k1_sum.1 = mul_mod(&u1_k1_sum.1, &q_minus_one, &q);
+        }
+
+        let mut u1_k2_sum = crate::G_BASE_2;
+        for i in 0..4 {
+            for j in 0..8 {
+                let bits = (k2_abs[i] >> (j * 4)) & 0xF;
+                if bits == 8 {
+                    continue;
+                }
+
+                let is_neg = (bits & 0x8) == 0;
+
+                let loc = if is_neg {
+                    7 - bits & 0x7
+                } else {
+                    // note that bits != 8
+                    (bits & 0x7) - 1
+                };
+
+                let (x2, mut y2) = crate::G_TABLES[i * 8 + j][loc as usize];
+
+                if is_neg {
+                    y2 = mul_mod(&y2, &q_minus_one, &q);
+                }
+
+                let (x1, y1) = &u1_k2_sum;
                 let res = point_add(x1, y1, &x2, &y2, &mut hint_counter);
                 if res.is_ok() {
-                    u1_k1_sum = Some(res.unwrap());
+                    u1_k2_sum = res.unwrap();
                 } else {
                     return EvaluationResult::Err(res.unwrap_err());
                 }
             }
         }
 
-        if k1_is_negative {
-            if !u1_k1_sum.is_none() {
-                let (x1, y1) = u1_k1_sum.as_ref().unwrap();
-                let y1_new = mul_mod(y1, &n_minus_one, &n);
-                u1_k1_sum = Some((*x1, y1_new));
-            }
-        }
+        if k2_abs[4] == 1 {
+            let (x2, y2) = crate::G_LAST_ENTRY;
 
-        let mut u1_k2_sum = None;
-        for i in 0..4 {
-            for j in 0..8 {
-                let bits = (k2_abs[i] >> (j * 4)) & 0xF;
-                if bits == 0 {
-                    continue;
-                } else {
-                    let (x2, y2) = crate::G_TABLES[i * 7 + j][(bits - 1) as usize];
-
-                    if u1_k2_sum.is_none() {
-                        u1_k2_sum = Some((x2, y2));
-                    } else {
-                        let (x1, y1) = u1_k2_sum.as_ref().unwrap();
-                        let res = point_add(x1, y1, &x2, &y2, &mut hint_counter);
-                        if res.is_ok() {
-                            u1_k2_sum = Some(res.unwrap());
-                        } else {
-                            return EvaluationResult::Err(res.unwrap_err());
-                        }
-                    }
-                }
-            }
-        }
-
-        if !u1_k2_sum.is_none() {
-            let (x1, y1) = u1_k2_sum.as_ref().unwrap();
-            let x1_new = mul_mod(x1, &endo_coeff, &n);
-            let y1_new = if k2_is_negative {
-                mul_mod(y1, &n_minus_one, &n)
+            let (x1, y1) = &u1_k2_sum;
+            let res = point_add(x1, y1, &x2, &y2, &mut hint_counter);
+            if res.is_ok() {
+                u1_k2_sum = res.unwrap();
             } else {
-                y1.clone()
-            };
-            u1_k2_sum = Some((x1_new, y1_new));
+                return EvaluationResult::Err(res.unwrap_err());
+            }
         }
 
-        let u1_sum = match (u1_k1_sum, u1_k2_sum) {
-            (Some(u1_k1_sum), Some(u1_k2_sum)) => {
-                let mut x_is_the_same = true;
-                for i in 0..8 {
-                    if u1_k1_sum.0[i] != u1_k2_sum.0[i] {
-                        x_is_the_same = false;
-                    }
-                }
+        u1_k2_sum.0 = mul_mod(&u1_k2_sum.0, &endo_coeff, &q);
+        if k2_is_negative {
+            u1_k2_sum.1 = mul_mod(&u1_k2_sum.1, &q_minus_one, &q);
+        }
 
-                if x_is_the_same {
-                    let mut y_is_the_same = true;
-                    for i in 0..8 {
-                        if u1_k1_sum.1[i] != u1_k2_sum.1[i] {
-                            y_is_the_same = false;
-                        }
-                    }
-
-                    // this would not be very likely to happen
-                    if x_is_the_same && y_is_the_same {
-                        point_double(&u1_k1_sum.0, &u1_k1_sum.1, &mut hint_counter).unwrap()
-                    } else {
-                        // only possible when z is zero, which would not happen with non-negligible probability
-                        unreachable!()
-                    }
-                } else {
-                    point_add(
-                        &u1_k1_sum.0,
-                        &u1_k1_sum.1,
-                        &u1_k2_sum.0,
-                        &u1_k2_sum.1,
-                        &mut hint_counter,
-                    )
-                    .unwrap()
+        let u1_sum = {
+            let mut x_is_the_same = true;
+            for i in 0..8 {
+                if u1_k1_sum.0[i] != u1_k2_sum.0[i] {
+                    x_is_the_same = false;
                 }
             }
-            (Some(u1_k1_sum), None) => u1_k1_sum,
-            (None, Some(u2_k2_sum)) => u2_k2_sum,
-            (None, None) => {
-                // only possible when z is zero, which would not happen with non-negligible probability
-                unreachable!()
+
+            if x_is_the_same {
+                let mut y_is_the_same = true;
+                for i in 0..8 {
+                    if u1_k1_sum.1[i] != u1_k2_sum.1[i] {
+                        y_is_the_same = false;
+                    }
+                }
+
+                // this would not be very likely to happen
+                if x_is_the_same && y_is_the_same {
+                    point_double(&u1_k1_sum.0, &u1_k1_sum.1, &mut hint_counter).unwrap()
+                } else {
+                    // only possible when z is zero, which would not happen with non-negligible probability
+                    unreachable!()
+                }
+            } else {
+                /*println!("final: {} {} {} {}",
+                         BigUint::from_slice(&u1_k1_sum.0),
+                         BigUint::from_slice(&u1_k1_sum.1),
+                         BigUint::from_slice(&u1_k2_sum.0),
+                         BigUint::from_slice(&u1_k2_sum.1),
+                );*/
+
+                point_add(
+                    &u1_k1_sum.0,
+                    &u1_k1_sum.1,
+                    &u1_k2_sum.0,
+                    &u1_k2_sum.1,
+                    &mut hint_counter,
+                )
+                .unwrap()
             }
         };
 
