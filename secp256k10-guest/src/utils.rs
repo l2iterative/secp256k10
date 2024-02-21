@@ -14,17 +14,37 @@ pub fn add32_and_overflow(a: u32, b: u32, carry: u32) -> (u32, u32) {
     let v = (a as u64).wrapping_add(b as u64).wrapping_add(carry as u64);
     ((v >> 32) as u32, (v & 0xffffffff) as u32)
 }
+
+#[inline(always)]
+pub fn carry32_and_overflow(a: u32, carry: u32) -> (u32, u32) {
+    let (v, carry) = a.overflowing_add(carry);
+    (carry as u32, v)
+}
+
 #[inline]
 pub fn add<const I: usize, const J: usize>(accm: &mut [u32; I], new: &[u32; J]) -> u32 {
     let mut carry = 0;
     (carry, accm[0]) = add32_and_overflow(accm[0], new[0], carry);
-    for i in 1..I {
+    for i in 1..J {
         (carry, accm[i]) = add32_and_overflow(accm[i], new[i], carry);
     }
-    for i in I..J {
-        (carry, accm[i]) = add32_and_overflow(accm[i], carry, 0);
+    for i in J..I {
+        (carry, accm[i]) = carry32_and_overflow(accm[i], carry);
     }
     carry
+}
+
+#[inline]
+pub fn overflow(accm: &mut [u32; 8]) {
+    let mut carry;
+    (carry, accm[0]) = add32_and_overflow(accm[0], 0x000003d1u32, 0);
+    (carry, accm[1]) = add32_and_overflow(accm[1], 0x1u32, carry);
+    (carry, accm[2]) = carry32_and_overflow(accm[2], carry);
+    (carry, accm[3]) = carry32_and_overflow(accm[3], carry);
+    (carry, accm[4]) = carry32_and_overflow(accm[4], carry);
+    (carry, accm[5]) = carry32_and_overflow(accm[5], carry);
+    (carry, accm[6]) = carry32_and_overflow(accm[6], carry);
+    (_, accm[7]) = carry32_and_overflow(accm[7], carry);
 }
 
 #[inline]
@@ -71,11 +91,12 @@ pub fn mul_mod(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8]) -> [u32; 8] {
 #[cfg(target_os = "zkvm")]
 #[inline(always)]
 pub fn mul_mod(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8]) -> [u32; 8] {
-    let mut res = [0u32; 8];
+    use std::mem::MaybeUninit;
+    let mut res = MaybeUninit::<[u32; 8]>::uninit();
 
     unsafe {
         sys_bigint(
-            &mut res as *mut [u32; 8],
+            res.as_mut_ptr(),
             0u32,
             a as *const [u32; 8],
             b as *const [u32; 8],
@@ -83,7 +104,7 @@ pub fn mul_mod(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8]) -> [u32; 8] {
         );
     }
 
-    return res;
+    return unsafe { res.assume_init() };
 }
 
 #[cfg(not(target_os = "zkvm"))]

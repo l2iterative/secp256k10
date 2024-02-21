@@ -57,8 +57,11 @@ fn main() {
         .unwrap()
         .write(&hint)
         .unwrap()
-        .write(&(compute_hint_vec.len() as u32))
+        .write(&((compute_hint_vec.len() * 4) as u32))
         .unwrap()
+        .write_slice(&compute_hint_vec)
+        .write_slice(&compute_hint_vec)
+        .write_slice(&compute_hint_vec)
         .write_slice(&compute_hint_vec)
         .trace_callback(|e| {
             cycle_tracer.borrow_mut().handle_event(e);
@@ -69,8 +72,6 @@ fn main() {
 
     let mut exec = ExecutorImpl::from_elf(env, METHOD_ELF).unwrap();
     let session = exec.run().unwrap();
-
-    println!("number of cycles: {}", session.user_cycles);
 
     cycle_tracer.borrow().print();
 

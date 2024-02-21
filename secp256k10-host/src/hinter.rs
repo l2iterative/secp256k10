@@ -265,7 +265,11 @@ impl HintBuilder {
                 (&r_x, &r_y),
                 &mut hints,
             );
-            sum_u2 = Some((x3, y3));
+            if is_u2_k1_negative {
+                sum_u2 = Some((x3, y3.neg()));
+            } else {
+                sum_u2 = Some((x3, y3));
+            }
         }
 
         if u2_k2_abs[4] == 1 {
@@ -274,11 +278,15 @@ impl HintBuilder {
 
             // 15 avoids the need to double 4 times
             let (x3, y3) = point_add_and_push_hint(
-                (&table_u2[14].0, &table_u2[14].2),
+                (&table_u2[14].2, &table_u2[14].1),
                 (&table_u2[0].2, &r_y),
                 &mut hints,
             );
-            sum_u2 = Some((x3, y3));
+            if is_u2_k2_negative {
+                sum_u2 = Some((x3, y3.neg()));
+            } else {
+                sum_u2 = Some((x3, y3));
+            }
         }
 
         for i in 0..4 {

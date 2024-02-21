@@ -36,10 +36,16 @@ fn main() {
         hint,
     );
 
-    let res = eval.evaluate(&mut compute_hint_provider);
-    assert!(matches!(res, Ok(_)));
+    let res1 = eval.evaluate(&mut compute_hint_provider);
+    let res2 = eval.evaluate(&mut compute_hint_provider);
+    let res3 = eval.evaluate(&mut compute_hint_provider);
+    let res4 = eval.evaluate(&mut compute_hint_provider);
+    assert!(matches!(res1, Ok(_)));
+    assert!(matches!(res2, Ok(_)));
+    assert!(matches!(res3, Ok(_)));
+    assert!(matches!(res4, Ok(_)));
 
-    let pk_recovered = match res {
+    let pk_recovered = match res1 {
         Ok(v) => v,
         Err(_) => {
             unreachable!()
