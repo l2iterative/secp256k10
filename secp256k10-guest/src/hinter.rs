@@ -67,6 +67,7 @@ impl ComputeHintBuffer {
 
 #[cfg(target_os = "zkvm")]
 impl ComputeHintStreamer for ComputeHintBuffer {
+    #[inline]
     fn next(&mut self) -> [u32; 8] {
         use risc0_zkvm::guest::env;
         if self.offset == 32 {
