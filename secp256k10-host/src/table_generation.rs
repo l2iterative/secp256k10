@@ -9,8 +9,8 @@ use std::str::FromStr;
 pub struct TableGeneration {
     pub g_series: [[([u32; 8], [u32; 8]); 15]; 32],
     pub g_last_one: ([u32; 8], [u32; 8]),
-    pub g_base_1: ([u32; 8], [u32; 8]),
-    pub g_base_2: ([u32; 8], [u32; 8]),
+    pub g_base_1: ([u32; 8], [u32; 8], [u32; 8]),
+    pub g_base_2: ([u32; 8], [u32; 8], [u32; 8]),
 }
 
 impl TableGeneration {
@@ -73,20 +73,26 @@ impl TableGeneration {
             .neg()
             .into_affine();
 
-        let mut g_base_1 = ([0u32; 8], [0u32; 8]);
+        let mut g_base_1 = ([0u32; 8], [0u32; 8], [0u32; 8]);
         g_base_1.0.copy_from_slice(&bytemuck::cast_slice(
             &base_1.x().unwrap().into_bigint().to_bytes_le(),
         ));
         g_base_1.1.copy_from_slice(&bytemuck::cast_slice(
             &base_1.y().unwrap().into_bigint().to_bytes_le(),
         ));
+        g_base_1.2.copy_from_slice(&bytemuck::cast_slice(
+            &base_1.y().unwrap().neg().into_bigint().to_bytes_le(),
+        ));
 
-        let mut g_base_2 = ([0u32; 8], [0u32; 8]);
+        let mut g_base_2 = ([0u32; 8], [0u32; 8], [0u32; 8]);
         g_base_2.0.copy_from_slice(&bytemuck::cast_slice(
             &base_2.x().unwrap().into_bigint().to_bytes_le(),
         ));
         g_base_2.1.copy_from_slice(&bytemuck::cast_slice(
             &base_2.y().unwrap().into_bigint().to_bytes_le(),
+        ));
+        g_base_2.2.copy_from_slice(&bytemuck::cast_slice(
+            &base_2.y().unwrap().neg().into_bigint().to_bytes_le(),
         ));
 
         Self {
@@ -145,6 +151,11 @@ impl TableGeneration {
         for v in self.g_base_1.1.iter() {
             print!("{}u32,", v);
         }
+        print!("],");
+        print!("[");
+        for v in self.g_base_1.2.iter() {
+            print!("{}u32,", v);
+        }
         println!("])");
 
         println!("Base entry 2:");
@@ -157,6 +168,11 @@ impl TableGeneration {
         for v in self.g_base_2.1.iter() {
             print!("{}u32,", v);
         }
+        print!("],");
+        print!("[");
+        for v in self.g_base_2.2.iter() {
+            print!("{}u32,", v);
+        }
         println!("])");
     }
 }
@@ -167,13 +183,13 @@ mod test {
     use ark_ec::{AffineRepr, CurveGroup};
     use ark_ff::{BigInteger, PrimeField};
     use ark_secp256k1::{Affine, Fq, Fr};
-    use std::ops::Mul;
+    use std::ops::{Mul, Neg};
     use std::str::FromStr;
 
     #[test]
     fn check_consistency() {
         let hint = TableGeneration::new();
-        hint.print();
+        // hint.print();
 
         for i in 0..32 {
             for j in 0..15 {
@@ -223,11 +239,18 @@ mod test {
             Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base_1.0));
         let base_1_y =
             Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base_1.1));
+        let base_1_y_neg =
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base_1.2));
 
         let base_2_x =
             Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base_2.0));
         let base_2_y =
             Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base_2.1));
+        let base_2_y_neg =
+            Fq::from_le_bytes_mod_order(&bytemuck::cast_slice::<u32, u8>(&hint.g_base_2.2));
+
+        assert_eq!(base_1_y.neg(), base_1_y_neg);
+        assert_eq!(base_2_y.neg(), base_2_y_neg);
 
         let base_1 = Affine::new(base_1_x, base_1_y);
         let base_2 = Affine::new(base_2_x, base_2_y);

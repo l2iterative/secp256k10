@@ -9,6 +9,10 @@ serde = { version = "1.0.196", features = ["derive"] }
 bytemuck = "1.14.3"
 l2r0-profiler-guest = "0.20.1"
 
+
+[target.'cfg(target_os = "zkvm")'.dependencies]
+risc0-zkvm = { version = "0.20.1", default-features = false, features = [ "std" ] }
+
 [target.'cfg(not(target_os = "zkvm"))'.dependencies]
 num-bigint = "0.4.4"
 

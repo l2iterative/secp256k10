@@ -13,5 +13,5 @@ l2r0-small-serde = "0.20.1"
 l2r0-profiler-guest = "0.20.1"
 
 [features]
-default = ["print-trace"]
+default = []
 print-trace = ["l2r0-profiler-guest/print-trace", "secp256k10-guest/print-trace"]

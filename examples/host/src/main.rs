@@ -70,6 +70,8 @@ fn main() {
     let mut exec = ExecutorImpl::from_elf(env, METHOD_ELF).unwrap();
     let session = exec.run().unwrap();
 
+    println!("number of cycles: {}", session.user_cycles);
+
     cycle_tracer.borrow().print();
 
     let journal = session.journal.unwrap().bytes;
