@@ -4,7 +4,7 @@
 
 It is necessary to give some background why we work on secp256k1 ECDSA key recovery for RISC Zero all of a sudden.
 
-- **Succinct/Paradigm released [SP1](https://github.com/succinctlabs/sp1).** SP1 is another RISC-V zkVM and is a direct 
+- **Succinct released [SP1](https://github.com/succinctlabs/sp1).** SP1 is another RISC-V zkVM and is a direct 
 competitor to RISC Zero. On the one hand, we are glad because it validates our fund's vision about RISC-V alt-VM for Ethereum;
 Paradigm's opinions matter a lot in the industry given that it is a sophisticated, very technically strong Ethereum developer team.
 On the other hand, since RISC Zero is our portfolio company, we do feel a responsibility to "protect RISC Zero" especially when 
