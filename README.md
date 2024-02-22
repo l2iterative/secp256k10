@@ -9,7 +9,7 @@ competitor to RISC Zero. On the one hand, we are glad because it validates our f
 Paradigm's opinions matter a lot in the industry given that it is a sophisticated, very technically strong Ethereum developer team.
 On the other hand, since RISC Zero is our portfolio company, we do feel a responsibility to "protect RISC Zero" especially when 
 Succinct reports better performance in ECDSA signature verification, thanks to customized gates. The observation is that 
-Succinct's approach is able to shrink the number of constraints by a factor of 3. We want RISC Zero to achieve the same speedup.
+Succinct's approach is able to shrink the number of cycles by a factor of 3. We want RISC Zero to achieve the same speedup.
 - **Demands from [Zeth](https://github.com/risc0/zeth), [Eclipse](https://github.com/Eclipse-Laboratories-Inc/zk-bpf), and others.** Optimism has been working with RISC Zero to bring ZK (fraud) proofs to OP Stack. 
 Zeth is production-ready, but it is desirous to reduce the proof generation cost further. The main bottlenecks are now 
 in ECDSA signature verification and Keccak. We believe that our technique can be generalized to ed25519, which would be 
