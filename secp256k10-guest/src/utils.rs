@@ -22,6 +22,7 @@ pub fn carry32_and_overflow(a: u32, carry: u32) -> (u32, u32) {
 }
 
 #[inline]
+#[must_use]
 pub fn add<const I: usize, const J: usize>(accm: &mut [u32; I], new: &[u32; J]) -> u32 {
     let mut carry = 0;
     (carry, accm[0]) = add32_and_overflow(accm[0], new[0], carry);
@@ -44,7 +45,8 @@ pub fn overflow(accm: &mut [u32; 8]) {
     (carry, accm[4]) = carry32_and_overflow(accm[4], carry);
     (carry, accm[5]) = carry32_and_overflow(accm[5], carry);
     (carry, accm[6]) = carry32_and_overflow(accm[6], carry);
-    (_, accm[7]) = carry32_and_overflow(accm[7], carry);
+    (carry, accm[7]) = carry32_and_overflow(accm[7], carry);
+    assert_eq!(carry, 0)
 }
 
 #[inline]
@@ -159,6 +161,34 @@ pub fn mul_quotient(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8], n_minus_one: &[u32
         );
     }
 
+    let r_smaller_than_modulus = {
+        let mut r_smaller_than_modulus = false;
+        for i in 0..8 {
+            if r[7 - i] > n[7 - i] {
+                panic!();
+            } else if r[7 - i] < n[7 - i] {
+                r_smaller_than_modulus = true;
+                break;
+            }
+        }
+        r_smaller_than_modulus
+    };
+    assert!(r_smaller_than_modulus);
+
+    let r_prime_smaller_than_modulus_minus_one = {
+        let mut r_prime_smaller_than_modulus_minus_one = false;
+        for i in 0..8 {
+            if r_prime[7 - i] > n_minus_one[7 - i] {
+                panic!();
+            } else if r_prime[7 - i] < n_minus_one[7 - i] {
+                r_prime_smaller_than_modulus_minus_one = true;
+                break;
+            }
+        }
+        r_prime_smaller_than_modulus_minus_one
+    };
+    assert!(r_prime_smaller_than_modulus_minus_one);
+
     let mut r_greater_than_r_prime = false;
     for i in 0..8 {
         if r[7 - i] > r_prime[7 - i] {
@@ -186,6 +216,20 @@ pub fn mul_quotient(a: &[u32; 8], b: &[u32; 8], n: &[u32; 8], n_minus_one: &[u32
                 n as *const [u32; 8],
             );
         }
+
+        let r_prime_smaller_than_modulus = {
+            let mut r_prime_smaller_than_modulus = false;
+            for i in 0..8 {
+                if r_prime[7 - i] > n[7 - i] {
+                    panic!();
+                } else if r_prime[7 - i] < n[7 - i] {
+                    r_prime_smaller_than_modulus = true;
+                    break;
+                }
+            }
+            r_prime_smaller_than_modulus
+        };
+        assert!(r_prime_smaller_than_modulus);
 
         return r_prime;
     } else {

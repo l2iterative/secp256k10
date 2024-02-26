@@ -254,7 +254,8 @@ impl Evaluator {
 
         // x is reduced
         if self.recid & 2 != 0 {
-            add::<8, 8>(&mut r_mod_q, &N);
+            let carry = add::<8, 8>(&mut r_mod_q, &N);
+            assert_eq!(carry, 0);
 
             let mut r_mod_q_less_than_q = false;
             for i in 0..8 {
@@ -290,7 +291,10 @@ impl Evaluator {
         let x_cubic = mul_mod(&x_sqr, &self.r, &Q);
 
         let mut x3_plus_ax_plus_b = [7u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];
-        add::<8, 8>(&mut x3_plus_ax_plus_b, &x_cubic);
+        let carry = add::<8, 8>(&mut x3_plus_ax_plus_b, &x_cubic);
+        if carry == 1 {
+            overflow(&mut x3_plus_ax_plus_b);
+        }
 
         x3_plus_ax_plus_b = mul_mod(&x3_plus_ax_plus_b, &ONE, &Q);
 
@@ -602,6 +606,33 @@ impl Evaluator {
         match (sum_u1, sum_u2) {
             ((u1x, u1y), Some((u2x, u2y))) => {
                 if u1x == u2x {
+                    let u1y_smaller_than_modulus = {
+                        let mut u1y_smaller_than_modulus = false;
+                        for i in 0..8 {
+                            if u1y[7 - i] > Q[7 - i] {
+                                return Err(EvaluationError::WrongHint);
+                            } else if u1y[7 - i] < Q[7 - i] {
+                                u1y_smaller_than_modulus = true;
+                                break;
+                            }
+                        }
+                        u1y_smaller_than_modulus
+                    };
+                    assert!(u1y_smaller_than_modulus);
+                    let u2y_smaller_than_modulus = {
+                        let mut u2y_smaller_than_modulus = false;
+                        for i in 0..8 {
+                            if u2y[7 - i] > Q[7 - i] {
+                                return Err(EvaluationError::WrongHint);
+                            } else if u2y[7 - i] < Q[7 - i] {
+                                u2y_smaller_than_modulus = true;
+                                break;
+                            }
+                        }
+                        u2y_smaller_than_modulus
+                    };
+                    assert!(u2y_smaller_than_modulus);
+
                     if u1y != u2y {
                         return Err(EvaluationError::RecoveredKeyIsPointOfInfinity);
                     } else {
@@ -647,6 +678,7 @@ pub fn scalar_decomposition(u: &[u32; 8]) -> ((bool, [u32; 8]), (bool, [u32; 8])
 
     let b21 = mul_mod(&beta_1, &N12, &U256_BOUND);
     let b22 = mul_mod(&beta_2, &N22, &U256_BOUND);
+
     let mut b22_larger_than_b21 = false;
     for i in 0..8 {
         if b22[7 - i] > b21[7 - i] {

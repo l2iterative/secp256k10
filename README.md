@@ -23,7 +23,7 @@ for features to RISC Zero for even more efficient signature verification through
 This repository provides an implementation that improves over existing implementation (see [here](https://github.com/risc0/risc0/tree/main/examples/ecdsa)), which is a patched k256 Rust crate, 
 from RISC Zero team, that has been used in Zeth, for a factor of about 3 in terms of compute cycles. 
 - k256 takes 925,349 to perform a linear combination of two points
-- our implementation takes 300,098 to perform a linear combination of two points where one of the points is fixed and known
+- our implementation takes 318,467 to perform a linear combination of two points where one of the points is fixed and known
 
 The benchmark focuses on the specific step within ECDSA key recovery that reconstructs the public key, which we find it representative.
 
@@ -67,6 +67,7 @@ pub fn carry32_and_overflow(a: u32, carry: u32) -> (u32, u32) {
 }
 
 #[inline]
+#[must_use]
 pub fn add<const I: usize, const J: usize>(accm: &mut [u32; I], new: &[u32; J]) -> u32 {
     let mut carry = 0;
     (carry, accm[0]) = add32_and_overflow(accm[0], new[0], carry);
